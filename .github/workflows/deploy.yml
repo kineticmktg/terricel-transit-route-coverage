@@ -16,7 +16,8 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        run: |
+          git clone --depth 1 --branch main https://github.com/${GITHUB_REPOSITORY}.git .
 
       - name: Setup SSH
         run: |
