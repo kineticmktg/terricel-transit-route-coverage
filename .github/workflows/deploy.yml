@@ -1,12 +1,17 @@
 name: Auto Deploy Dispatch Module
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
+    name: Deploy Dispatch Module
     runs-on: ubuntu-latest
 
     steps:
