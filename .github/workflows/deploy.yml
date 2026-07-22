@@ -25,6 +25,10 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Test SSH connection
+        run: |
+          ssh -vvv -i ~/.ssh/deploy_key -p "${{ secrets.SSH_PORT }}" -o BatchMode=yes -o StrictHostKeyChecking=yes "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "echo SSH_OK"
+
       - name: Ensure remote plugin directory exists
         run: |
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "mkdir -p /home/terricel/domains/terriceltransit.com/public_html/wp-content/plugins/terricel-transit-route-coverage/"
