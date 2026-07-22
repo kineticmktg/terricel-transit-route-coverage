@@ -16,8 +16,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        run: |
-          git clone --depth 1 --branch main https://github.com/${GITHUB_REPOSITORY}.git .
+        uses: actions/checkout@v4
 
       - name: Setup SSH
         run: |
@@ -33,4 +32,4 @@ jobs:
             --exclude ".git" \
             --exclude ".github" \
             ./ \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/terricel/domains/terricel.kineticmktg.com/public_html/wp-content/plugins/terricel-transit-route-coverage/
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/terricel/domains/terriceltransit.com/public_html/wp-content/plugins/terricel-transit-route-coverage/
