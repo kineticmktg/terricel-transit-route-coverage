@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.16] - 2026-07-23
+
+### Added
+
+- Added run-level default driver selection to route schedules, allowing a specific run to use its own regular driver instead of the route's default driver.
+
 ## [0.28.15] - 2026-07-22
 
 ### Fixed
