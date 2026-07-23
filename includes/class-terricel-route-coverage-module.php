@@ -346,6 +346,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         wp_nonce_field('terricel_coverage_schedule_meta', 'terricel_coverage_schedule_meta_nonce');
 
         $date = get_post_meta($post->ID, '_terricel_coverage_date', true);
+        $date = $date ? $this->sanitize_date_value($date) : current_time('Y-m-d');
         $route_id = (int) get_post_meta($post->ID, '_terricel_coverage_route_id', true);
         $driver_id = (int) get_post_meta($post->ID, '_terricel_coverage_driver_id', true);
         $notes = get_post_meta($post->ID, '_terricel_coverage_notes', true);
@@ -3065,12 +3066,19 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     }
 
     private function sanitize_date_value($value) {
+        $value = sanitize_text_field((string) $value);
         if (!$value) {
             return '';
         }
 
-        $date = DateTime::createFromFormat('Y-m-d', $value);
-        return $date && $date->format('Y-m-d') === $value ? $value : '';
+        foreach (array('Y-m-d', 'm/d/Y', 'n/j/Y') as $format) {
+            $date = DateTime::createFromFormat('!' . $format, $value);
+            if ($date && $date->format($format) === $value) {
+                return $date->format('Y-m-d');
+            }
+        }
+
+        return '';
     }
 
     private function sanitize_time_value($value) {
@@ -3203,9 +3211,17 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo '<p><select id="terricel_coverage_route_id" name="terricel_coverage_route_id" class="widefat">';
         echo '<option value="0">' . esc_html__('Select a route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</option>';
 
-        foreach ($this->get_parent_routes() as $route) {
-            $default_driver_id = (int) get_post_meta($route->ID, '_terricel_route_default_driver_id', true);
-            echo '<option value="' . esc_attr($route->ID) . '" data-default-driver-id="' . esc_attr($default_driver_id) . '"' . selected($selected_route_id, $route->ID, false) . '>' . esc_html(get_the_title($route)) . '</option>';
+        $groups = $this->get_schedule_route_select_groups();
+
+        foreach ($groups as $group_label => $routes) {
+            echo '<optgroup label="' . esc_attr($group_label) . '">';
+
+            foreach ($routes as $route) {
+                $default_driver_id = (int) get_post_meta($route->ID, '_terricel_route_default_driver_id', true);
+                echo '<option value="' . esc_attr($route->ID) . '" data-default-driver-id="' . esc_attr($default_driver_id) . '"' . selected($selected_route_id, $route->ID, false) . '>' . esc_html(get_the_title($route)) . '</option>';
+            }
+
+            echo '</optgroup>';
         }
 
         echo '</select></p>';
@@ -3431,6 +3447,42 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 'order'          => 'ASC',
             )
         );
+    }
+
+    private function get_schedule_route_select_groups() {
+        $groups = array();
+
+        foreach ($this->get_parent_routes() as $route) {
+            $location = $this->get_route_location_labels($route->ID);
+            $group_label = $location['districts'] . ' > ' . $location['schools'];
+
+            if (!isset($groups[$group_label])) {
+                $groups[$group_label] = array();
+            }
+
+            $groups[$group_label][] = $route;
+        }
+
+        uksort($groups, 'strnatcasecmp');
+
+        foreach ($groups as &$routes) {
+            usort(
+                $routes,
+                function ($first, $second) {
+                    return strnatcasecmp($this->get_route_sort_label($first->ID), $this->get_route_sort_label($second->ID));
+                }
+            );
+        }
+
+        unset($routes);
+
+        return $groups;
+    }
+
+    private function get_route_sort_label($route_id) {
+        $title = get_the_title($route_id);
+
+        return preg_replace('/\s+/', ' ', trim((string) $title));
     }
 
     private function get_active_drivers() {
