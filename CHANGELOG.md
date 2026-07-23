@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.1] - 2026-07-22
+
+### Fixed
+
+- Added an opt-in “Add Any Driver” override to the Dispatch Route List so dispatchers can assign a substitute driver from the full active driver list, including drivers already assigned to another route for the same day, to support approved double-up coverage.
+
 ## [0.28.0] - 2026-07-19
 
 ### Changed

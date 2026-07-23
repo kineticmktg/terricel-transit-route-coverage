@@ -1193,7 +1193,8 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         }
 
         $raw_run_substitutes = isset($_POST['terricel_route_run_substitute_driver_id']) && is_array($_POST['terricel_route_run_substitute_driver_id']) ? wp_unslash($_POST['terricel_route_run_substitute_driver_id']) : array();
-        $raw_run_substitutes = $this->sanitize_today_run_substitute_posts($date, $raw_run_substitutes);
+        $raw_allow_any_driver = isset($_POST['terricel_route_run_allow_any_driver']) && is_array($_POST['terricel_route_run_allow_any_driver']) ? wp_unslash($_POST['terricel_route_run_allow_any_driver']) : array();
+        $raw_run_substitutes = $this->sanitize_today_run_substitute_posts($date, $raw_run_substitutes, $raw_allow_any_driver);
 
         foreach ($raw_run_substitutes as $route_id => $run_substitutes) {
             $route_id = absint($route_id);
@@ -1239,6 +1240,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $route_id = isset($_POST['route_id']) ? absint($_POST['route_id']) : 0;
         $run_value = isset($_POST['run_value']) ? sanitize_text_field(wp_unslash($_POST['run_value'])) : '';
         $driver_id = isset($_POST['driver_id']) ? absint($_POST['driver_id']) : 0;
+        $allow_any_driver = isset($_POST['allow_any_driver']) ? absint($_POST['allow_any_driver']) : 0;
 
         if (!$date || $route_id < 1 || !$run_value || 'publish' !== get_post_status($route_id)) {
             wp_send_json_error(array('message' => __('The selected run could not be saved.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)), 400);
@@ -1249,7 +1251,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             wp_send_json_error(array('message' => __('The selected run does not match this dispatch date.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)), 400);
         }
 
-        if ($driver_id > 0 && !$this->is_driver_available_for_dispatch_run($driver_id, $date, $route_id, $parts)) {
+        if ($driver_id > 0 && !$allow_any_driver && !$this->is_driver_available_for_dispatch_run($driver_id, $date, $route_id, $parts)) {
             wp_send_json_error(array('message' => __('That driver is no longer available for this run.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)), 400);
         }
 
@@ -1276,9 +1278,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         );
     }
 
-    private function sanitize_today_run_substitute_posts($date, $raw_run_substitutes) {
+    private function sanitize_today_run_substitute_posts($date, $raw_run_substitutes, $raw_allow_any_driver = array()) {
         $flattened = array();
         $route_by_run_value = array();
+        $allow_any_driver = array();
 
         foreach ($raw_run_substitutes as $route_id => $run_substitutes) {
             $route_id = absint($route_id);
@@ -1295,7 +1298,39 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             }
         }
 
-        $sanitized = $this->logistics()->sanitize_run_substitute_assignments($date, $flattened);
+        foreach ($raw_allow_any_driver as $route_id => $run_substitutes) {
+            $route_id = absint($route_id);
+            $run_substitutes = is_array($run_substitutes) ? $run_substitutes : array();
+
+            foreach ($run_substitutes as $run_value => $flag) {
+                $run_value = sanitize_text_field($run_value);
+                if (!$run_value) {
+                    continue;
+                }
+
+                if (!empty($flag)) {
+                    $allow_any_driver[$run_value] = true;
+                }
+            }
+        }
+
+        $sanitized = array();
+        $flattened_for_validation = array();
+
+        foreach ($flattened as $run_value => $driver_id) {
+            if (isset($allow_any_driver[$run_value])) {
+                $sanitized[$run_value] = $driver_id;
+                continue;
+            }
+
+            $flattened_for_validation[$run_value] = $driver_id;
+        }
+
+        $validated = $this->logistics()->sanitize_run_substitute_assignments($date, $flattened_for_validation);
+        foreach ($validated as $run_value => $driver_id) {
+            $sanitized[$run_value] = $driver_id;
+        }
+
         $grouped = array();
 
         foreach ($sanitized as $run_value => $driver_id) {
@@ -1656,11 +1691,12 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo '<th>' . esc_html__('Regular Driver Out', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th>';
         echo '<th>' . esc_html__('Assigned Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th>';
         echo '<th>' . esc_html__('Substitute Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th>';
+        echo '<th>' . esc_html__('Add Any Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th>';
         echo '<th>' . esc_html__('Status', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th>';
         echo '</tr></thead><tbody>';
 
         if (empty($route_rows)) {
-            echo '<tr><td colspan="8">' . esc_html__('No vacant routes or substitute-covered routes for this date.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</td></tr>';
+            echo '<tr><td colspan="9">' . esc_html__('No vacant routes or substitute-covered routes for this date.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</td></tr>';
         }
 
         foreach ($route_rows as $row) {
@@ -1674,6 +1710,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             echo '<td>' . esc_html($row['regular_driver_out']) . '</td>';
             echo '<td>' . wp_kses_post($this->get_linked_post_markup($row['assigned_driver_id'])) . '</td>';
             echo '<td>' . esc_html__('Select by run below', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</td>';
+            echo '<td></td>';
             echo '<td>' . esc_html($row['status_label']) . '</td>';
             echo '</tr>';
 
@@ -1687,6 +1724,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 echo '</td>';
                 echo '<td>' . esc_html($run['start_label']) . '</td>';
                 echo '<td colspan="2">' . esc_html__('Run coverage', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</td>';
+                echo '<td>' . $this->get_run_any_driver_toggle_markup($row['route_id'], $run['value']) . '</td>';
                 $substitute_drivers = $this->get_available_substitute_driver_options(
                     $availability,
                     $today,
@@ -1712,9 +1750,11 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo '(function(){';
         echo 'var form=document.querySelector(".terricel-dispatch-substitute-form");if(!form){return;}';
         echo 'var nonce=form.querySelector("input[name=_wpnonce]");var date=form.querySelector("input[name=terricel_coverage_substitute_date]");';
+        echo 'function optionValueLabelPair(options){var items=[];Object.keys(options||{}).forEach(function(key){items.push({id:String(key),name:String(options[key]||key)});});return items;}';
+        echo 'function syncRunDriverOptions(select,allowAny){var available=optionValueLabelPair(JSON.parse(select.getAttribute("data-available-options")||"{}"));var all=optionValueLabelPair(JSON.parse(select.getAttribute("data-all-options")||"{}"));var allOptions=allowAny?all:available;var selectedValue=String(select.value||"0");select.innerHTML="";var none=document.createElement("option");none.value="0";none.textContent="' . esc_js(__('No substitute driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)) . '";if(selectedValue==="0"){none.selected=true;}select.appendChild(none);allOptions.forEach(function(option){var node=document.createElement("option");node.value=String(option.id||"0");node.textContent=option.name||String(option.id||"0");if(String(option.id||"0")===selectedValue){node.selected=true;}select.appendChild(node);});}';
         echo 'function setStatus(select,message,state){var cell=select.closest("td");var status=cell?cell.querySelector(".terricel-run-substitute-save-status"):null;if(status){status.textContent=message||"";status.className="terricel-run-substitute-save-status "+(state||"");}}';
         echo 'function updateRow(select,statusLabel,covered){var row=select.closest("tr");if(!row){return;}var statusCell=row.querySelector(".terricel-dispatch-run-status");if(statusCell&&statusLabel){statusCell.textContent=statusLabel;}row.style.background=covered?"":"#fff5f5";row.style.color=covered?"":"#8a1f11";}';
-        echo 'form.addEventListener("change",function(event){var select=event.target;if(!select.classList||!select.classList.contains("terricel-run-substitute-select")){return;}var data=new FormData();data.append("action","terricel_route_coverage_save_run_substitute");data.append("_wpnonce",nonce?nonce.value:"");data.append("date",date?date.value:"");data.append("route_id",select.getAttribute("data-route-id")||"0");data.append("run_value",select.getAttribute("data-run-value")||"");data.append("driver_id",select.value||"0");select.disabled=true;setStatus(select,"Saving...","is-saving");fetch(ajaxurl,{method:"POST",credentials:"same-origin",body:data}).then(function(response){return response.json();}).then(function(response){if(!response||!response.success){throw new Error(response&&response.data&&response.data.message?response.data.message:"Unable to save.");}setStatus(select,"Saved. Refreshing...","is-saved");updateRow(select,response.data.status_label,response.data.covered);window.setTimeout(function(){window.location.reload();},300);}).catch(function(error){setStatus(select,error.message||"Unable to save.","is-error");select.disabled=false;});});';
+        echo 'form.addEventListener("change",function(event){var target=event.target;if(!target||!target.classList){return;}if(target.classList.contains("terricel-run-any-driver-toggle")){var select=target.closest("tr")?target.closest("tr").querySelector(".terricel-run-substitute-select"):null;if(select){syncRunDriverOptions(select,target.checked);}return;}if(!target.classList.contains("terricel-run-substitute-select")){return;}var data=new FormData();data.append("action","terricel_route_coverage_save_run_substitute");data.append("_wpnonce",nonce?nonce.value:"");data.append("date",date?date.value:"");data.append("route_id",target.getAttribute("data-route-id")||"0");data.append("run_value",target.getAttribute("data-run-value")||"");data.append("driver_id",target.value||"0");var toggle=target.closest("tr")?target.closest("tr").querySelector(".terricel-run-any-driver-toggle"):null;data.append("allow_any_driver",toggle&&toggle.checked?"1":"0");target.disabled=true;setStatus(target,"Saving...","is-saving");fetch(ajaxurl,{method:"POST",credentials:"same-origin",body:data}).then(function(response){return response.json();}).then(function(response){if(!response||!response.success){throw new Error(response&&response.data&&response.data.message?response.data.message:"Unable to save.");}setStatus(target,"Saved. Refreshing...","is-saved");updateRow(target,response.data.status_label,response.data.covered);window.setTimeout(function(){window.location.reload();},300);}).catch(function(error){setStatus(target,error.message||"Unable to save.","is-error");target.disabled=false;});});';
         echo '}());';
         echo '</script>';
     }
@@ -2525,16 +2565,23 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         return $markup;
     }
 
+    private function get_run_any_driver_toggle_markup($route_id, $run_value) {
+        $field_id = 'terricel_route_run_add_any_driver_' . absint($route_id) . '_' . md5($run_value);
+
+        return '<label for="' . esc_attr($field_id) . '"><input type="checkbox" class="terricel-run-any-driver-toggle" id="' . esc_attr($field_id) . '" name="terricel_route_run_allow_any_driver[' . esc_attr($route_id) . '][' . esc_attr($run_value) . ']" value="1"> ' . esc_html__('Add Any Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</label>';
+    }
+
     private function get_run_substitute_driver_select_markup($route_id, $run_value, $selected_driver_id, $substitute_drivers) {
         $field_id = 'terricel_route_run_substitute_driver_id_' . absint($route_id) . '_' . md5($run_value);
         $selected_driver_id = absint($selected_driver_id);
+        $all_driver_options = $this->get_all_active_driver_options($selected_driver_id);
 
         if ($selected_driver_id > 0 && !isset($substitute_drivers[$selected_driver_id]) && 'publish' === get_post_status($selected_driver_id)) {
             $substitute_drivers[$selected_driver_id] = get_the_title($selected_driver_id);
         }
 
         $markup = '<label class="screen-reader-text" for="' . esc_attr($field_id) . '">' . esc_html__('Substitute Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</label>';
-        $markup .= '<select class="terricel-run-substitute-select" id="' . esc_attr($field_id) . '" name="terricel_route_run_substitute_driver_id[' . esc_attr($route_id) . '][' . esc_attr($run_value) . ']" data-route-id="' . esc_attr($route_id) . '" data-run-value="' . esc_attr($run_value) . '" style="min-width:180px;">';
+        $markup .= '<select class="terricel-run-substitute-select" id="' . esc_attr($field_id) . '" name="terricel_route_run_substitute_driver_id[' . esc_attr($route_id) . '][' . esc_attr($run_value) . ']" data-route-id="' . esc_attr($route_id) . '" data-run-value="' . esc_attr($run_value) . '" data-available-options="' . esc_attr(wp_json_encode($substitute_drivers)) . '" data-all-options="' . esc_attr(wp_json_encode($all_driver_options)) . '" style="min-width:180px;">';
         $markup .= '<option value="0">' . esc_html__('No substitute driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</option>';
 
         foreach ($substitute_drivers as $driver_id => $driver_name) {
@@ -3341,6 +3388,21 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
     private function get_available_substitute_driver_options($availability, $date, $schedules = array(), $vacancies = array(), $run_key = '', $selected_driver_id = 0) {
         return $this->logistics()->get_available_substitute_driver_options($date, $schedules, $vacancies, $run_key, $selected_driver_id, $availability);
+    }
+
+    private function get_all_active_driver_options($selected_driver_id = 0) {
+        $options = array();
+        $selected_driver_id = absint($selected_driver_id);
+
+        foreach ($this->get_active_drivers() as $driver) {
+            $options[$driver->ID] = get_the_title($driver);
+        }
+
+        if ($selected_driver_id > 0 && !isset($options[$selected_driver_id]) && 'publish' === get_post_status($selected_driver_id)) {
+            $options[$selected_driver_id] = get_the_title($selected_driver_id);
+        }
+
+        return $options;
     }
 
     private function get_assigned_substitute_driver_ids_for_date($schedules, $vacancies) {
