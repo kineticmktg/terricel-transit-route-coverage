@@ -3493,7 +3493,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $vacancies = $this->get_vacancies_for_date($date);
         $rows = array();
 
-        foreach ($this->get_route_runs_for_date($route_id, $date) as $run) {
+        foreach ($this->get_schedule_editor_route_runs_for_date($route_id, $date) as $run) {
             $run_key = isset($run['run_key']) ? sanitize_key($run['run_key']) : '';
             $run_name = isset($run['run_name']) ? sanitize_text_field($run['run_name']) : '';
             $start_time = isset($run['start_time']) ? $this->sanitize_time_value($run['start_time']) : '';
@@ -3539,6 +3539,20 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         }
 
         return $rows;
+    }
+
+    private function get_schedule_editor_route_runs_for_date($route_id, $date) {
+        $timestamp = strtotime($date);
+        if (!$timestamp) {
+            return array();
+        }
+
+        $day_key = strtolower(date('l', $timestamp));
+        $schedule = $this->get_route_regular_schedule($route_id);
+        $regular_runs = isset($schedule[$day_key]) && is_array($schedule[$day_key]) ? $schedule[$day_key] : array();
+        $adjusted_runs = $this->logistics()->apply_route_schedule_changes_to_runs($route_id, $date, $regular_runs);
+
+        return !empty($adjusted_runs) ? $adjusted_runs : $regular_runs;
     }
 
     private function get_route_schedule_for_vacancy_editor($route_id) {
