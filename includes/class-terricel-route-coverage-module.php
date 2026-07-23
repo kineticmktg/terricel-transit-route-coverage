@@ -2176,35 +2176,166 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $date = !empty($new_state['date']) ? $new_state['date'] : (isset($old_state['date']) ? $old_state['date'] : '');
         $route_id = !empty($new_state['route_id']) ? absint($new_state['route_id']) : (isset($old_state['route_id']) ? absint($old_state['route_id']) : 0);
         $route_name = $route_id ? get_the_title($route_id) : __('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
-        $status = isset($new_state['status']) ? $new_state['status'] : '';
-        $reason = $notes ? $notes : $this->get_label($status, $this->coverage_statuses(), 'scheduled');
-        $driver_ids = array_merge(
-            $this->get_schedule_state_driver_ids($old_state),
-            $this->get_schedule_state_driver_ids($new_state)
-        );
+        $reason = $this->get_schedule_notification_reason($notes);
+        $driver_messages = $this->get_schedule_driver_change_messages($old_state, $new_state, $route_name, $date, $reason);
 
-        foreach (array_unique(array_filter(array_map('absint', $driver_ids))) as $driver_id) {
+        foreach ($driver_messages as $driver_id => $messages) {
+            $messages = array_unique(array_filter(array_map('sanitize_textarea_field', (array) $messages)));
+            if (empty($messages)) {
+                continue;
+            }
             $this->queue_driver_notification(
                 $driver_id,
                 __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                sprintf(
-                    __('Your schedule changed for %1$s on %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                    $route_name,
-                    $this->format_date($date),
-                    $reason
-                )
+                implode("\n", $messages)
             );
         }
 
         $this->queue_operations_schedule_change_notification(
             __('Route Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-            sprintf(
-                __('%1$s changed for %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                $route_name,
-                $this->format_date($date),
+            $this->append_schedule_change_reason(
+                sprintf(
+                    __('%1$s changed for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $this->format_date($date)
+                ),
                 $reason
             )
         );
+    }
+
+    private function get_schedule_driver_change_messages($old_state, $new_state, $route_name, $date, $reason = '') {
+        $messages = array();
+        $date_label = $this->format_date($date);
+        $route_run_label = __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+
+        foreach (array('driver_id', 'substitute_driver_id') as $field) {
+            $old_driver_id = isset($old_state[$field]) ? absint($old_state[$field]) : 0;
+            $new_driver_id = isset($new_state[$field]) ? absint($new_state[$field]) : 0;
+
+            if ($old_driver_id === $new_driver_id) {
+                continue;
+            }
+
+            if ($old_driver_id > 0) {
+                $messages[$old_driver_id][] = $this->format_driver_schedule_assignment_message('unassigned', $route_name, $route_run_label, $date_label, $reason);
+            }
+
+            if ($new_driver_id > 0) {
+                $messages[$new_driver_id][] = $this->format_driver_schedule_assignment_message('assigned', $route_name, $route_run_label, $date_label, $reason);
+            }
+        }
+
+        $old_run_substitutes = isset($old_state['run_substitutes']) && is_array($old_state['run_substitutes']) ? $old_state['run_substitutes'] : array();
+        $new_run_substitutes = isset($new_state['run_substitutes']) && is_array($new_state['run_substitutes']) ? $new_state['run_substitutes'] : array();
+        $run_values = array_unique(array_merge(array_keys($old_run_substitutes), array_keys($new_run_substitutes)));
+
+        foreach ($run_values as $run_value) {
+            $run_value = sanitize_text_field($run_value);
+            if (!$run_value) {
+                continue;
+            }
+
+            $old_driver_id = $this->get_effective_schedule_run_driver_id($old_state, $run_value);
+            $new_driver_id = $this->get_effective_schedule_run_driver_id($new_state, $run_value);
+
+            if ($old_driver_id === $new_driver_id) {
+                continue;
+            }
+
+            $run_label = $this->get_schedule_run_notification_label($run_value);
+            if ($old_driver_id > 0) {
+                $messages[$old_driver_id][] = $this->format_driver_schedule_assignment_message('unassigned', $route_name, $run_label, $date_label, $reason);
+            }
+
+            if ($new_driver_id > 0) {
+                $messages[$new_driver_id][] = $this->format_driver_schedule_assignment_message('assigned', $route_name, $run_label, $date_label, $reason);
+            }
+        }
+
+        return $messages;
+    }
+
+    private function get_effective_schedule_run_driver_id($state, $run_value) {
+        $state = is_array($state) ? $state : array();
+        $run_substitutes = isset($state['run_substitutes']) && is_array($state['run_substitutes']) ? $state['run_substitutes'] : array();
+
+        if (array_key_exists($run_value, $run_substitutes)) {
+            return absint($run_substitutes[$run_value]);
+        }
+
+        if (!empty($state['substitute_driver_id'])) {
+            return absint($state['substitute_driver_id']);
+        }
+
+        return !empty($state['driver_id']) ? absint($state['driver_id']) : 0;
+    }
+
+    private function get_schedule_run_notification_label($run_value) {
+        $parts = $this->logistics()->parse_run_value($run_value);
+        if ($parts && !empty($parts['run_key'])) {
+            $run_names = self::get_standard_run_names();
+            if (!empty($run_names[$parts['run_key']])) {
+                return $run_names[$parts['run_key']];
+            }
+
+            return sanitize_text_field($parts['run_key']);
+        }
+
+        return __('Scheduled run', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+    }
+
+    private function format_driver_schedule_assignment_message($action, $route_name, $run_label, $date_label, $reason = '') {
+        $message = sprintf(
+            'assigned' === $action
+                ? __('Your schedule has changed and you have been assigned to route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
+                : __('Your schedule has changed and you have been unassigned from route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            $route_name,
+            $run_label,
+            $date_label
+        );
+
+        return $this->append_schedule_change_reason($message, $reason);
+    }
+
+    private function append_schedule_change_reason($message, $reason) {
+        $reason = $this->get_schedule_notification_reason($reason);
+        if (!$reason) {
+            return $message;
+        }
+
+        return sprintf(
+            /* translators: 1: notification message. 2: schedule change reason. */
+            __('%1$s Reason: %2$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            $message,
+            $reason
+        );
+    }
+
+    private function get_schedule_notification_reason($reason) {
+        $reason = trim(sanitize_text_field((string) $reason));
+        if (!$reason) {
+            return '';
+        }
+
+        $generated_reasons = array(
+            __('Dispatch assignment update', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            __('Route vacancy', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            __('Scheduled', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            __('Covered', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            __('Unassigned', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            'scheduled',
+            'covered',
+            'unassigned',
+        );
+
+        foreach ($generated_reasons as $generated_reason) {
+            if (0 === strcasecmp($reason, trim((string) $generated_reason))) {
+                return '';
+            }
+        }
+
+        return $reason;
     }
 
     private function queue_vacancy_affected_driver_notifications($old_state, $new_state, $notes = '') {
@@ -2220,7 +2351,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $route_id = !empty($new_state['route_id']) ? absint($new_state['route_id']) : (isset($old_state['route_id']) ? absint($old_state['route_id']) : 0);
         $route_name = $route_id ? get_the_title($route_id) : __('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
         $date_range = $this->format_date_range($date, $end_date);
-        $reason = $notes ? $notes : __('Route vacancy', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        $reason = $this->get_schedule_notification_reason($notes);
         $regular_driver_ids = array(
             isset($old_state['driver_id']) ? absint($old_state['driver_id']) : 0,
             isset($new_state['driver_id']) ? absint($new_state['driver_id']) : 0,
@@ -2234,9 +2365,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             $this->queue_driver_notification(
                 $driver_id,
                 __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                sprintf(
-                    __('Your schedule changed for %1$s for %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                $this->format_driver_schedule_assignment_message(
+                    'unassigned',
                     $route_name,
+                    __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
                     $date_range,
                     $reason
                 )
@@ -2252,15 +2384,19 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             $assigned_now = isset($new_state['assigned_driver_id']) && absint($new_state['assigned_driver_id']) === $driver_id;
             $subject = $assigned_now ? __('Substitute Assignment', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) : __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
             $message = $assigned_now
-                ? sprintf(
-                    __('You are assigned to cover %1$s for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                ? $this->format_driver_schedule_assignment_message(
+                    'assigned',
                     $route_name,
-                    $date_range
+                    __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $date_range,
+                    $reason
                 )
-                : sprintf(
-                    __('Your substitute assignment changed for %1$s for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                : $this->format_driver_schedule_assignment_message(
+                    'unassigned',
                     $route_name,
-                    $date_range
+                    __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $date_range,
+                    $reason
                 );
 
             $this->queue_driver_notification($driver_id, $subject, $message);
@@ -2268,10 +2404,12 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
         $this->queue_operations_schedule_change_notification(
             __('Route Vacancy Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-            sprintf(
-                __('%1$s changed for %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                $route_name,
-                $date_range,
+            $this->append_schedule_change_reason(
+                sprintf(
+                    __('%1$s changed for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $date_range
+                ),
                 $reason
             )
         );

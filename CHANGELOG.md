@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.6] - 2026-07-22
+
+### Changed
+
+- Updated driver schedule-change notifications to say whether the driver was assigned or unassigned, including route, run, date, and only explicit reasons.
+
 ## [0.28.5] - 2026-07-22
 
 ### Added
