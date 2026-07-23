@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.10] - 2026-07-22
+
+### Changed
+
+- Removed the legacy `terricel_dispatch` role from operations schedule-change recipient lookup.
+
 ## [0.28.9] - 2026-07-22
 
 ### Changed
