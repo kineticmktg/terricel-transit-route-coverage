@@ -1245,12 +1245,6 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
             $run_substitutes = is_array($run_substitutes) ? $run_substitutes : array();
             $this->save_today_substitute_schedule($date, $route_id, 0, $run_substitutes);
-            foreach ($run_substitutes as $run_value => $driver_id) {
-                $driver_id = absint($driver_id);
-                if ($driver_id > 0) {
-                    $this->queue_substitute_assignment_notification($route_id, $date, $driver_id, $run_value);
-                }
-            }
         }
 
         $raw_substitutes = isset($_POST['terricel_route_substitute_driver_id']) && is_array($_POST['terricel_route_substitute_driver_id']) ? wp_unslash($_POST['terricel_route_substitute_driver_id']) : array();
@@ -1269,9 +1263,6 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             }
 
             $this->save_today_substitute_schedule($date, $route_id, $driver_id, array());
-            if ($driver_id > 0) {
-                $this->queue_substitute_assignment_notification($route_id, $date, $driver_id);
-            }
         }
 
         wp_safe_redirect(add_query_arg('terricel_route_coverage_substitutes_saved', '1', admin_url('admin.php?page=terricel-transit-route-coverage')));
@@ -1315,9 +1306,6 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         }
 
         $this->save_today_substitute_schedule($date, $route_id, 0, $run_substitutes);
-        if ($driver_id > 0) {
-            $this->queue_substitute_assignment_notification($route_id, $date, $driver_id, $run_value);
-        }
 
         wp_send_json_success(
             array(
@@ -2288,6 +2276,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             $driver_ids[] = absint($state['driver_id']);
         }
 
+        if (!empty($state['substitute_driver_id'])) {
+            $driver_ids[] = absint($state['substitute_driver_id']);
+        }
+
         foreach ((array) (isset($state['run_substitutes']) ? $state['run_substitutes'] : array()) as $driver_id) {
             if (absint($driver_id) > 0) {
                 $driver_ids[] = absint($driver_id);
@@ -2313,6 +2305,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 'date'            => isset($state['date']) ? sanitize_text_field($state['date']) : '',
                 'route_id'        => isset($state['route_id']) ? absint($state['route_id']) : 0,
                 'driver_id'       => isset($state['driver_id']) ? absint($state['driver_id']) : 0,
+                'substitute_id'   => isset($state['substitute_driver_id']) ? absint($state['substitute_driver_id']) : 0,
                 'run_substitutes' => $normalized_runs,
                 'status'          => isset($state['status']) ? sanitize_key($state['status']) : '',
             )
@@ -2414,6 +2407,16 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $schedule = $this->get_schedule_for_route_date($route_id, $date);
         $regular_driver_id = (int) get_post_meta($route_id, '_terricel_route_default_driver_id', true);
         $assigned_driver_id = $schedule ? (int) get_post_meta($schedule->ID, '_terricel_coverage_driver_id', true) : $regular_driver_id;
+        $old_run_substitutes = $schedule ? get_post_meta($schedule->ID, '_terricel_coverage_run_substitutes', true) : array();
+        $old_run_substitutes = is_array($old_run_substitutes) ? $old_run_substitutes : array();
+        $old_state = array(
+            'date'                 => $schedule ? get_post_meta($schedule->ID, '_terricel_coverage_date', true) : $date,
+            'route_id'             => $schedule ? (int) get_post_meta($schedule->ID, '_terricel_coverage_route_id', true) : $route_id,
+            'driver_id'            => $assigned_driver_id,
+            'substitute_driver_id' => $schedule ? (int) get_post_meta($schedule->ID, '_terricel_coverage_substitute_driver_id', true) : 0,
+            'run_substitutes'      => $old_run_substitutes,
+            'status'               => $schedule ? get_post_meta($schedule->ID, '_terricel_coverage_status', true) : ($assigned_driver_id > 0 ? 'scheduled' : 'unassigned'),
+        );
         $sanitized_run_substitutes = $this->sanitize_today_run_substitutes($run_substitutes);
 
         if (!$assigned_driver_id && $regular_driver_id) {
@@ -2451,6 +2454,18 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         update_post_meta($schedule_id, '_terricel_coverage_status', $status);
         $this->update_generated_title($schedule_id, $this->build_schedule_title($date, $route_id));
         $this->sync_schedule_alert($schedule_id, $date, $route_id, $status, $assigned_driver_id, $substitute_driver_id);
+        $this->queue_schedule_affected_driver_notifications(
+            $old_state,
+            array(
+                'date'                 => $date,
+                'route_id'             => $route_id,
+                'driver_id'            => $assigned_driver_id,
+                'substitute_driver_id' => $substitute_driver_id,
+                'run_substitutes'      => $sanitized_run_substitutes,
+                'status'               => $status,
+            ),
+            __('Dispatch assignment update', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
+        );
     }
 
     private function sanitize_today_run_substitutes($run_substitutes) {
