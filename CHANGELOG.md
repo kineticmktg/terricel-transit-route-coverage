@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.7] - 2026-07-22
+
+### Fixed
+
+- Include the legacy Terricel Dispatch role in operations schedule-change notifications.
+
 ## [0.28.6] - 2026-07-22
 
 ### Changed

@@ -2436,7 +2436,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $users = get_users(
             array(
                 'fields'  => array('ID'),
-                'role__in' => array('terricel_admin', 'terricel_dispatcher'),
+                'role__in' => array('terricel_admin', 'terricel_dispatcher', 'terricel_dispatch'),
             )
         );
 
