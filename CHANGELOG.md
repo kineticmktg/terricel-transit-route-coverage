@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.13] - 2026-07-22
+
+### Fixed
+
+- Format affected driver names as First Last in admin/dispatcher route schedule-change notifications.
+
 ## [0.28.12] - 2026-07-22
 
 ### Changed

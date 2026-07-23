@@ -2613,7 +2613,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     }
 
     private function format_operations_driver_schedule_assignment_message($action, $driver_id, $route_name, $run_label, $date_label) {
-        $driver_name = $driver_id > 0 ? get_the_title(absint($driver_id)) : '';
+        $driver_name = $this->get_notification_driver_name($driver_id);
         $driver_name = $driver_name ? $driver_name : __('Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
 
         return sprintf(
@@ -2625,6 +2625,22 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             $run_label,
             $date_label
         );
+    }
+
+    private function get_notification_driver_name($driver_id) {
+        $driver_name = $driver_id > 0 ? trim(get_the_title(absint($driver_id))) : '';
+        if (!$driver_name) {
+            return '';
+        }
+
+        if (false !== strpos($driver_name, ',')) {
+            $parts = array_map('trim', explode(',', $driver_name, 2));
+            if (!empty($parts[0]) && !empty($parts[1])) {
+                $driver_name = trim($parts[1] . ' ' . $parts[0]);
+            }
+        }
+
+        return sanitize_text_field($driver_name);
     }
 
     private function get_operations_dedupe_key() {
