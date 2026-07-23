@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.12] - 2026-07-22
+
+### Changed
+
+- Updated driver-facing route schedule-change notifications to use "You were" wording.
+
 ## [0.28.11] - 2026-07-22
 
 ### Changed

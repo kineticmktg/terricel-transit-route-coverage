@@ -2283,8 +2283,8 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     private function format_driver_schedule_assignment_message($action, $route_name, $run_label, $date_label, $reason = '') {
         $message = sprintf(
             'assigned' === $action
-                ? __('Driver was assigned to Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
-                : __('Driver was unassigned from Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                ? __('You were assigned to Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
+                : __('You were unassigned from Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
             $route_name,
             $run_label,
             $date_label
