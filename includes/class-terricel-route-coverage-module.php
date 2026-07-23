@@ -1205,6 +1205,12 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
             $run_substitutes = is_array($run_substitutes) ? $run_substitutes : array();
             $this->save_today_substitute_schedule($date, $route_id, 0, $run_substitutes);
+            foreach ($run_substitutes as $run_value => $driver_id) {
+                $driver_id = absint($driver_id);
+                if ($driver_id > 0) {
+                    $this->queue_substitute_assignment_notification($route_id, $date, $driver_id, $run_value);
+                }
+            }
         }
 
         $raw_substitutes = isset($_POST['terricel_route_substitute_driver_id']) && is_array($_POST['terricel_route_substitute_driver_id']) ? wp_unslash($_POST['terricel_route_substitute_driver_id']) : array();
@@ -1223,6 +1229,9 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             }
 
             $this->save_today_substitute_schedule($date, $route_id, $driver_id, array());
+            if ($driver_id > 0) {
+                $this->queue_substitute_assignment_notification($route_id, $date, $driver_id);
+            }
         }
 
         wp_safe_redirect(add_query_arg('terricel_route_coverage_substitutes_saved', '1', admin_url('admin.php?page=terricel-transit-route-coverage')));
@@ -2108,6 +2117,22 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             ),
             admin_url('admin.php?page=terricel-transit-route-coverage')
         );
+
+        foreach ($this->get_user_ids_for_driver($driver_id) as $user_id) {
+            terricel_logistics_queue_user_notification(
+                $this->id,
+                $user_id,
+                __('Substitute Assignment', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                sprintf(
+                    __('You are assigned to cover %1$s on %2$s.%3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $this->format_date($date),
+                    $run_label
+                ),
+                admin_url('admin.php?page=terricel-driver-dashboard'),
+                'driver_schedule_change'
+            );
+        }
     }
 
     private function queue_driver_schedule_change_notifications($date, $route_id, $assigned_driver_id, $run_substitutes, $notes, $status) {
@@ -2146,17 +2171,23 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     }
 
     private function get_user_ids_for_driver($driver_id) {
+        $driver_id = absint($driver_id);
         $users = get_users(
             array(
                 'fields'     => array('ID'),
                 'meta_key'   => '_terricel_linked_driver_id',
-                'meta_value' => absint($driver_id),
+                'meta_value' => $driver_id,
             )
         );
         $user_ids = array();
 
         foreach ($users as $user) {
             $user_ids[] = absint($user->ID);
+        }
+
+        $linked_user_id = (int) get_post_meta($driver_id, '_terricel_driver_user_id', true);
+        if ($linked_user_id > 0) {
+            $user_ids[] = $linked_user_id;
         }
 
         return array_values(array_filter(array_unique($user_ids)));
