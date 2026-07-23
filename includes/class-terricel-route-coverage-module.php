@@ -2627,7 +2627,9 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
             $type = isset($change['type']) ? sanitize_key($change['type']) : '';
             $note = isset($change['note']) ? $this->get_schedule_notification_reason($change['note']) : '';
-            if (!in_array($type, array('closure', 'delay', 'half_day'), true)) {
+            $type = $this->normalize_schedule_change_type($type);
+
+            if (!in_array($type, array('unplanned_closure', 'unplanned_delay', 'unplanned_early_dismissal', 'scheduled_closure', 'scheduled_early_dismissal'), true)) {
                 continue;
             }
 
@@ -4738,25 +4740,30 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     }
 
     private function get_schedule_change_label($change) {
-        $type = isset($change['type']) ? sanitize_key($change['type']) : '';
+        $type = isset($change['type']) ? $this->normalize_schedule_change_type($change['type']) : '';
 
-        if ('closure' === $type) {
-            return __('Closure', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        if ('unplanned_closure' === $type) {
+            return __('Unplanned Closure', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
         }
 
-        if ('delay' === $type) {
+        if ('scheduled_closure' === $type) {
+            return __('Scheduled Closure', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        }
+
+        if ('unplanned_delay' === $type) {
             $hours = isset($change['delay_hours']) ? rtrim(rtrim((string) $change['delay_hours'], '0'), '.') : '0';
             return sprintf(
                 /* translators: %s: number of delay hours. */
-                __('%s hour delay', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                __('Unplanned %s hour delay', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
                 $hours
             );
         }
 
-        if ('half_day' === $type) {
+        if (in_array($type, array('unplanned_early_dismissal', 'scheduled_early_dismissal'), true)) {
             return sprintf(
-                /* translators: %s: early dismissal time. */
-                __('Early dismissal at %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                /* translators: 1: schedule change type, 2: early dismissal time. */
+                __('%1$s at %2$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                'scheduled_early_dismissal' === $type ? __('Scheduled Early Dismissal', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) : __('Unplanned Early Dismissal', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
                 !empty($change['early_dismissal_time']) ? $this->format_time_value($change['early_dismissal_time']) : __('Not set', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
             );
         }
@@ -4765,9 +4772,9 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     }
 
     private function get_schedule_change_affected_runs_label($change, $date, $runs) {
-        $type = isset($change['type']) ? sanitize_key($change['type']) : '';
+        $type = isset($change['type']) ? $this->normalize_schedule_change_type($change['type']) : '';
 
-        if ('closure' === $type) {
+        if (in_array($type, array('unplanned_closure', 'scheduled_closure'), true)) {
             return __('All affected runs cancelled; route is not vacant.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
         }
 
@@ -4797,7 +4804,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     }
 
     private function apply_single_schedule_change_to_runs($change, $runs) {
-        $type = isset($change['type']) ? sanitize_key($change['type']) : '';
+        $type = isset($change['type']) ? $this->normalize_schedule_change_type($change['type']) : '';
 
         foreach ($runs as &$run) {
             if (!is_array($run)) {
@@ -4809,14 +4816,14 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 continue;
             }
 
-            if ('delay' === $type && $start_time < '12:00') {
+            if ('unplanned_delay' === $type && $start_time < '12:00') {
                 $minutes = isset($change['delay_hours']) ? (int) round(((float) $change['delay_hours']) * 60) : 0;
                 if ($minutes > 0) {
                     $run['start_time'] = $this->add_minutes_to_time($start_time, $minutes);
                 }
             }
 
-            if ('half_day' === $type) {
+            if (in_array($type, array('unplanned_early_dismissal', 'scheduled_early_dismissal'), true)) {
                 $early_time = isset($change['early_dismissal_time']) ? $this->sanitize_time_value($change['early_dismissal_time']) : '';
                 if ($early_time && $start_time > $early_time) {
                     $run['start_time'] = $early_time;
@@ -4826,6 +4833,17 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         unset($run);
 
         return $runs;
+    }
+
+    private function normalize_schedule_change_type($type) {
+        $type = sanitize_key($type);
+        $legacy_types = array(
+            'closure'  => 'unplanned_closure',
+            'delay'    => 'unplanned_delay',
+            'half_day' => 'unplanned_early_dismissal',
+        );
+
+        return isset($legacy_types[$type]) ? $legacy_types[$type] : $type;
     }
 
     private function add_minutes_to_time($time, $minutes) {
