@@ -704,6 +704,15 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             return;
         }
 
+        $old_state = array(
+            'date'            => get_post_meta($post_id, '_terricel_coverage_date', true),
+            'route_id'        => (int) get_post_meta($post_id, '_terricel_coverage_route_id', true),
+            'driver_id'       => (int) get_post_meta($post_id, '_terricel_coverage_driver_id', true),
+            'run_substitutes' => get_post_meta($post_id, '_terricel_coverage_run_substitutes', true),
+            'status'          => get_post_meta($post_id, '_terricel_coverage_status', true),
+        );
+        $old_state['run_substitutes'] = is_array($old_state['run_substitutes']) ? $old_state['run_substitutes'] : array();
+
         $date = $this->sanitize_date_field('terricel_coverage_date');
         $route_id = $this->sanitize_post_id('terricel_coverage_route_id');
         $driver_id = $this->sanitize_post_id('terricel_coverage_driver_id');
@@ -724,7 +733,17 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $this->save_meta_value($post_id, '_terricel_coverage_notes', $notes);
         $this->update_generated_title($post_id, $this->build_schedule_title($date, $route_id));
         $this->sync_schedule_alert($post_id, $date, $route_id, $status, $driver_id, $substitute_driver_id);
-        $this->queue_driver_schedule_change_notifications($date, $route_id, $driver_id, $run_substitutes, $notes, $status);
+        $this->queue_schedule_affected_driver_notifications(
+            $old_state,
+            array(
+                'date'            => $date,
+                'route_id'        => $route_id,
+                'driver_id'       => $driver_id,
+                'run_substitutes' => $run_substitutes,
+                'status'          => $status,
+            ),
+            $notes
+        );
     }
 
     public function save_availability_meta($post_id) {
@@ -752,6 +771,15 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         if (!$this->can_save($post_id, 'terricel_coverage_vacancy_meta_nonce', 'terricel_coverage_vacancy_meta')) {
             return;
         }
+
+        $old_state = array(
+            'date'               => get_post_meta($post_id, '_terricel_vacancy_date', true),
+            'end_date'           => get_post_meta($post_id, '_terricel_vacancy_end_date', true),
+            'driver_id'          => (int) get_post_meta($post_id, '_terricel_vacancy_driver_id', true),
+            'route_id'           => (int) get_post_meta($post_id, '_terricel_vacancy_route_id', true),
+            'assigned_driver_id' => (int) get_post_meta($post_id, '_terricel_vacancy_assigned_driver_id', true),
+            'status'             => get_post_meta($post_id, '_terricel_vacancy_status', true),
+        );
 
         $date = $this->sanitize_date_field('terricel_vacancy_date');
         $end_date = $this->sanitize_date_field('terricel_vacancy_end_date');
@@ -788,6 +816,18 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $this->save_meta_value($post_id, '_terricel_vacancy_notes', $notes);
         $this->update_generated_title($post_id, $this->build_vacancy_title($date, $driver_id));
         $this->sync_vacancy_alert($post_id, $date, $end_date, $route_id, $status, 'normal', $assigned_driver_id);
+        $this->queue_vacancy_affected_driver_notifications(
+            $old_state,
+            array(
+                'date'               => $date,
+                'end_date'           => $end_date,
+                'driver_id'          => $driver_id,
+                'route_id'           => $route_id,
+                'assigned_driver_id' => $assigned_driver_id,
+                'status'             => $status,
+            ),
+            $notes
+        );
     }
 
     public function save_driver_regular_availability_meta($post_id) {
@@ -2135,39 +2175,163 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         }
     }
 
-    private function queue_driver_schedule_change_notifications($date, $route_id, $assigned_driver_id, $run_substitutes, $notes, $status) {
+    private function queue_schedule_affected_driver_notifications($old_state, $new_state, $notes = '') {
+        $old_state = is_array($old_state) ? $old_state : array();
+        $new_state = is_array($new_state) ? $new_state : array();
+
+        if ($this->get_schedule_notification_state_key($old_state) === $this->get_schedule_notification_state_key($new_state)) {
+            return;
+        }
+
+        $date = !empty($new_state['date']) ? $new_state['date'] : (isset($old_state['date']) ? $old_state['date'] : '');
+        $route_id = !empty($new_state['route_id']) ? absint($new_state['route_id']) : (isset($old_state['route_id']) ? absint($old_state['route_id']) : 0);
         $route_name = $route_id ? get_the_title($route_id) : __('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        $status = isset($new_state['status']) ? $new_state['status'] : '';
         $reason = $notes ? $notes : $this->get_label($status, $this->coverage_statuses(), 'scheduled');
+        $driver_ids = array_merge(
+            $this->get_schedule_state_driver_ids($old_state),
+            $this->get_schedule_state_driver_ids($new_state)
+        );
+
+        foreach (array_unique(array_filter(array_map('absint', $driver_ids))) as $driver_id) {
+            $this->queue_driver_notification(
+                $driver_id,
+                __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                sprintf(
+                    __('Your schedule changed for %1$s on %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $this->format_date($date),
+                    $reason
+                )
+            );
+        }
+    }
+
+    private function queue_vacancy_affected_driver_notifications($old_state, $new_state, $notes = '') {
+        $old_state = is_array($old_state) ? $old_state : array();
+        $new_state = is_array($new_state) ? $new_state : array();
+
+        if ($this->get_vacancy_notification_state_key($old_state) === $this->get_vacancy_notification_state_key($new_state)) {
+            return;
+        }
+
+        $date = !empty($new_state['date']) ? $new_state['date'] : (isset($old_state['date']) ? $old_state['date'] : '');
+        $end_date = !empty($new_state['end_date']) ? $new_state['end_date'] : (isset($old_state['end_date']) ? $old_state['end_date'] : '');
+        $route_id = !empty($new_state['route_id']) ? absint($new_state['route_id']) : (isset($old_state['route_id']) ? absint($old_state['route_id']) : 0);
+        $route_name = $route_id ? get_the_title($route_id) : __('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        $date_range = $this->format_date_range($date, $end_date);
+        $reason = $notes ? $notes : __('Route vacancy', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        $regular_driver_ids = array(
+            isset($old_state['driver_id']) ? absint($old_state['driver_id']) : 0,
+            isset($new_state['driver_id']) ? absint($new_state['driver_id']) : 0,
+        );
+
+        if ($route_id > 0) {
+            $regular_driver_ids[] = (int) get_post_meta($route_id, '_terricel_route_default_driver_id', true);
+        }
+
+        foreach (array_unique(array_filter(array_map('absint', $regular_driver_ids))) as $driver_id) {
+            $this->queue_driver_notification(
+                $driver_id,
+                __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                sprintf(
+                    __('Your schedule changed for %1$s for %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $date_range,
+                    $reason
+                )
+            );
+        }
+
+        $substitute_driver_ids = array(
+            isset($old_state['assigned_driver_id']) ? absint($old_state['assigned_driver_id']) : 0,
+            isset($new_state['assigned_driver_id']) ? absint($new_state['assigned_driver_id']) : 0,
+        );
+
+        foreach (array_unique(array_filter(array_map('absint', $substitute_driver_ids))) as $driver_id) {
+            $assigned_now = isset($new_state['assigned_driver_id']) && absint($new_state['assigned_driver_id']) === $driver_id;
+            $subject = $assigned_now ? __('Substitute Assignment', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) : __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+            $message = $assigned_now
+                ? sprintf(
+                    __('You are assigned to cover %1$s for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $date_range
+                )
+                : sprintf(
+                    __('Your substitute assignment changed for %1$s for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $date_range
+                );
+
+            $this->queue_driver_notification($driver_id, $subject, $message);
+        }
+    }
+
+    private function queue_driver_notification($driver_id, $subject, $message) {
+        foreach ($this->get_user_ids_for_driver($driver_id) as $user_id) {
+            terricel_logistics_queue_user_notification(
+                $this->id,
+                $user_id,
+                $subject,
+                $message,
+                admin_url('admin.php?page=terricel-driver-dashboard'),
+                'driver_schedule_change'
+            );
+        }
+    }
+
+    private function get_schedule_state_driver_ids($state) {
+        $state = is_array($state) ? $state : array();
         $driver_ids = array();
 
-        if ($assigned_driver_id > 0) {
-            $driver_ids[] = $assigned_driver_id;
+        if (!empty($state['driver_id'])) {
+            $driver_ids[] = absint($state['driver_id']);
         }
 
-        foreach ((array) $run_substitutes as $driver_id) {
-            $driver_id = absint($driver_id);
-            if ($driver_id > 0) {
-                $driver_ids[] = $driver_id;
+        foreach ((array) (isset($state['run_substitutes']) ? $state['run_substitutes'] : array()) as $driver_id) {
+            if (absint($driver_id) > 0) {
+                $driver_ids[] = absint($driver_id);
             }
         }
 
-        foreach (array_unique($driver_ids) as $driver_id) {
-            foreach ($this->get_user_ids_for_driver($driver_id) as $user_id) {
-                terricel_logistics_queue_user_notification(
-                    $this->id,
-                    $user_id,
-                    __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                    sprintf(
-                        __('Your schedule changed for %1$s on %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                        $route_name,
-                        $this->format_date($date),
-                        $reason
-                    ),
-                    admin_url('admin.php?page=terricel-driver-dashboard'),
-                    'driver_schedule_change'
-                );
-            }
+        return array_values(array_unique(array_filter($driver_ids)));
+    }
+
+    private function get_schedule_notification_state_key($state) {
+        $state = is_array($state) ? $state : array();
+        $run_substitutes = isset($state['run_substitutes']) && is_array($state['run_substitutes']) ? $state['run_substitutes'] : array();
+        $normalized_runs = array();
+
+        foreach ($run_substitutes as $run_value => $driver_id) {
+            $normalized_runs[sanitize_text_field($run_value)] = absint($driver_id);
         }
+
+        ksort($normalized_runs, SORT_STRING);
+
+        return wp_json_encode(
+            array(
+                'date'            => isset($state['date']) ? sanitize_text_field($state['date']) : '',
+                'route_id'        => isset($state['route_id']) ? absint($state['route_id']) : 0,
+                'driver_id'       => isset($state['driver_id']) ? absint($state['driver_id']) : 0,
+                'run_substitutes' => $normalized_runs,
+                'status'          => isset($state['status']) ? sanitize_key($state['status']) : '',
+            )
+        );
+    }
+
+    private function get_vacancy_notification_state_key($state) {
+        $state = is_array($state) ? $state : array();
+
+        return wp_json_encode(
+            array(
+                'date'               => isset($state['date']) ? sanitize_text_field($state['date']) : '',
+                'end_date'           => isset($state['end_date']) ? sanitize_text_field($state['end_date']) : '',
+                'route_id'           => isset($state['route_id']) ? absint($state['route_id']) : 0,
+                'driver_id'          => isset($state['driver_id']) ? absint($state['driver_id']) : 0,
+                'assigned_driver_id' => isset($state['assigned_driver_id']) ? absint($state['assigned_driver_id']) : 0,
+                'status'             => isset($state['status']) ? sanitize_key($state['status']) : '',
+            )
+        );
     }
 
     private function get_user_ids_for_driver($driver_id) {
