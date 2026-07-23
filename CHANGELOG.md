@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.11] - 2026-07-22
+
+### Changed
+
+- Include the affected driver's name in admin/dispatcher route schedule-change notifications.
+
 ## [0.28.10] - 2026-07-22
 
 ### Changed

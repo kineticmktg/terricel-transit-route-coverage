@@ -2473,14 +2473,14 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         if (!empty($driver_change)) {
             $run_label = !empty($driver_change['run_label']) ? $driver_change['run_label'] : __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
             $message = $this->append_schedule_change_reason(
-                $this->format_operations_driver_schedule_assignment_message($driver_change['action'], $route_name, $run_label, $this->format_date($date)),
+                $this->format_operations_driver_schedule_assignment_message($driver_change['action'], $driver_change['driver_id'], $route_name, $run_label, $this->format_date($date)),
                 $reason
             );
 
             return array(
                 'subject'    => __('Route Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
                 'message'    => $message,
-                'dedupe_key' => $this->get_operations_dedupe_key('route-driver-change', $route_id, $date, $driver_change['action'], $run_label, $reason),
+                'dedupe_key' => $this->get_operations_dedupe_key('route-driver-change', $route_id, $date, $driver_change['action'], $driver_change['driver_id'], $run_label, $reason),
             );
         }
 
@@ -2572,6 +2572,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             if ($new_driver_id > 0) {
                 return array(
                     'action'    => 'assigned',
+                    'driver_id' => $new_driver_id,
                     'run_label' => __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
                 );
             }
@@ -2579,6 +2580,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             if ($old_driver_id > 0) {
                 return array(
                     'action'    => 'unassigned',
+                    'driver_id' => $old_driver_id,
                     'run_label' => __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
                 );
             }
@@ -2602,6 +2604,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
             return array(
                 'action'    => $new_driver_id > 0 ? 'assigned' : 'unassigned',
+                'driver_id' => $new_driver_id > 0 ? $new_driver_id : $old_driver_id,
                 'run_label' => $this->get_schedule_run_notification_label($run_value),
             );
         }
@@ -2609,11 +2612,15 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         return array();
     }
 
-    private function format_operations_driver_schedule_assignment_message($action, $route_name, $run_label, $date_label) {
+    private function format_operations_driver_schedule_assignment_message($action, $driver_id, $route_name, $run_label, $date_label) {
+        $driver_name = $driver_id > 0 ? get_the_title(absint($driver_id)) : '';
+        $driver_name = $driver_name ? $driver_name : __('Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+
         return sprintf(
             'assigned' === $action
-                ? __('Driver was assigned to Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
-                : __('Driver was unassigned from Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                ? __('%1$s was assigned to Route %2$s - %3$s - on %4$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
+                : __('%1$s was unassigned from Route %2$s - %3$s - on %4$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            $driver_name,
             $route_name,
             $run_label,
             $date_label
