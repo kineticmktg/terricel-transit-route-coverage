@@ -4336,6 +4336,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                         continue;
                     }
 
+                    if ($this->is_scheduled_schedule_change($change)) {
+                        continue;
+                    }
+
                     $type = isset($change['type']) ? sanitize_key($change['type']) : '';
                     $note = isset($change['note']) ? sanitize_text_field($change['note']) : '';
                     $district_name = $location['districts'];
@@ -4396,6 +4400,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
             foreach ($changes as $change) {
                 if (!is_array($change)) {
+                    continue;
+                }
+
+                if ($this->is_scheduled_schedule_change($change)) {
                     continue;
                 }
 
@@ -4844,6 +4852,12 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         );
 
         return isset($legacy_types[$type]) ? $legacy_types[$type] : $type;
+    }
+
+    private function is_scheduled_schedule_change($change) {
+        $type = is_array($change) && isset($change['type']) ? $this->normalize_schedule_change_type($change['type']) : '';
+
+        return in_array($type, array('scheduled_closure', 'scheduled_early_dismissal'), true);
     }
 
     private function add_minutes_to_time($time, $minutes) {
