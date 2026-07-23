@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.14] - 2026-07-22
+
+### Added
+
+- Added a rich morning dispatch summary email for vacant and substitute-covered runs.
+
 ## [0.28.13] - 2026-07-22
 
 ### Fixed

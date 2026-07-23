@@ -1585,6 +1585,115 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         return count($this->filter_route_rows_by_priority($route_rows, 'unassigned'));
     }
 
+    public function queue_daily_vacancy_summary_notifications($date, $notifications) {
+        if (!$notifications || !method_exists($notifications, 'queue_role_html_email_notification')) {
+            return false;
+        }
+
+        $summary = $this->get_daily_vacancy_summary($date);
+        if (empty($summary['vacant_count']) && empty($summary['covered_count'])) {
+            return false;
+        }
+
+        return (bool) $notifications->queue_role_html_email_notification(
+            $this->id,
+            'daily_vacant_routes',
+            sprintf(
+                __('Dispatch Summary for %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                $summary['date_label']
+            ),
+            $this->build_daily_vacancy_summary_email($summary)
+        );
+    }
+
+    private function get_daily_vacancy_summary($date) {
+        $date = $date ? $this->sanitize_date_value($date) : current_time('Y-m-d');
+        $routes = $this->get_parent_routes();
+        $schedules = $this->get_schedules_for_date($date);
+        $driver_out_records = $this->get_driver_out_records($date);
+        $active_vacancies = $this->get_vacancies_for_date($date);
+        $route_rows = $this->build_dispatcher_route_rows($routes, $schedules, $driver_out_records, $active_vacancies, $date);
+        $items = array();
+        $vacant_count = 0;
+        $covered_count = 0;
+
+        foreach ($route_rows as $row) {
+            $runs = !empty($row['runs']) && is_array($row['runs']) ? $row['runs'] : array();
+            if (empty($runs)) {
+                $is_covered = !empty($row['substitute_driver_id']);
+                $items[] = $this->format_daily_vacancy_summary_item($row, array(), $is_covered);
+                $is_covered ? $covered_count++ : $vacant_count++;
+                continue;
+            }
+
+            foreach ($runs as $run) {
+                $is_covered = !empty($run['substitute_driver_id']);
+                $items[] = $this->format_daily_vacancy_summary_item($row, $run, $is_covered);
+                $is_covered ? $covered_count++ : $vacant_count++;
+            }
+        }
+
+        return array(
+            'date'          => $date,
+            'date_label'    => $this->format_date($date),
+            'items'         => $items,
+            'vacant_count'  => $vacant_count,
+            'covered_count' => $covered_count,
+            'dispatch_url'  => admin_url('admin.php?page=terricel-transit-route-coverage'),
+        );
+    }
+
+    private function format_daily_vacancy_summary_item($row, $run, $is_covered) {
+        $regular_driver_id = !empty($row['regular_driver_id']) ? absint($row['regular_driver_id']) : 0;
+        $substitute_driver_id = !empty($run['substitute_driver_id']) ? absint($run['substitute_driver_id']) : (!empty($row['substitute_driver_id']) ? absint($row['substitute_driver_id']) : 0);
+
+        return array(
+            'status_key'      => $is_covered ? 'covered' : 'vacant',
+            'status'          => $is_covered ? __('Covered', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) : __('Vacant', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            'route'           => isset($row['route_name']) ? sanitize_text_field($row['route_name']) : __('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            'run'             => !empty($run['run_name']) ? sanitize_text_field($run['run_name']) : __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            'time'            => !empty($run['start_label']) ? sanitize_text_field($run['start_label']) : '',
+            'district'        => isset($row['district_name']) ? sanitize_text_field($row['district_name']) : '',
+            'school'          => isset($row['school_name']) ? sanitize_text_field($row['school_name']) : '',
+            'regular_driver'  => $regular_driver_id ? $this->get_notification_driver_name($regular_driver_id) : '',
+            'substitute'      => $substitute_driver_id ? $this->get_notification_driver_name($substitute_driver_id) : '',
+        );
+    }
+
+    private function build_daily_vacancy_summary_email($summary) {
+        $dispatch_url = esc_url($summary['dispatch_url']);
+        $items = isset($summary['items']) && is_array($summary['items']) ? $summary['items'] : array();
+        $rows = '';
+
+        foreach ($items as $item) {
+            $status_color = 'covered' === $item['status_key'] ? '#166534' : '#991b1b';
+            $status_bg = 'covered' === $item['status_key'] ? '#dcfce7' : '#fee2e2';
+            $rows .= '<tr>';
+            $rows .= '<td style="padding:10px;border-bottom:1px solid #e5e7eb;"><span style="display:inline-block;padding:4px 8px;border-radius:999px;background:' . esc_attr($status_bg) . ';color:' . esc_attr($status_color) . ';font-weight:700;font-size:12px;">' . esc_html($item['status']) . '</span></td>';
+            $rows .= '<td style="padding:10px;border-bottom:1px solid #e5e7eb;"><strong>' . esc_html($item['route']) . '</strong><br><span style="color:#64748b;">' . esc_html($item['district']) . ' / ' . esc_html($item['school']) . '</span></td>';
+            $rows .= '<td style="padding:10px;border-bottom:1px solid #e5e7eb;">' . esc_html($item['run']) . (!empty($item['time']) ? '<br><span style="color:#64748b;">' . esc_html($item['time']) . '</span>' : '') . '</td>';
+            $rows .= '<td style="padding:10px;border-bottom:1px solid #e5e7eb;">' . esc_html($item['regular_driver'] ? $item['regular_driver'] : __('None', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)) . '</td>';
+            $rows .= '<td style="padding:10px;border-bottom:1px solid #e5e7eb;">' . esc_html($item['substitute'] ? $item['substitute'] : __('Not assigned', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)) . '</td>';
+            $rows .= '</tr>';
+        }
+
+        return '<!doctype html><html><body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">'
+            . '<div style="max-width:860px;margin:0 auto;padding:28px 16px;">'
+            . '<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">'
+            . '<div style="background:#1d4f91;color:#ffffff;padding:22px 24px;">'
+            . '<h1 style="margin:0;font-size:24px;line-height:1.25;">' . esc_html__('Morning Dispatch Summary', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</h1>'
+            . '<p style="margin:8px 0 0;font-size:15px;">' . esc_html($summary['date_label']) . '</p>'
+            . '</div>'
+            . '<div style="padding:22px 24px;">'
+            . '<p style="font-size:16px;line-height:1.5;margin:0 0 16px;">' . esc_html(sprintf(__('Today has %1$d vacant runs and %2$d covered runs needing dispatch visibility.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), absint($summary['vacant_count']), absint($summary['covered_count']))) . '</p>'
+            . '<p style="margin:0 0 22px;"><a href="' . $dispatch_url . '" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:6px;">' . esc_html__('View Dispatch Log', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a></p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;font-size:14px;">'
+            . '<thead><tr style="background:#f1f5f9;text-align:left;"><th style="padding:10px;">' . esc_html__('Status', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th><th style="padding:10px;">' . esc_html__('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th><th style="padding:10px;">' . esc_html__('Run', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th><th style="padding:10px;">' . esc_html__('Regular Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th><th style="padding:10px;">' . esc_html__('Sub Driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th></tr></thead>'
+            . '<tbody>' . $rows . '</tbody></table>'
+            . '<p style="margin:18px 0 0;color:#64748b;font-size:13px;line-height:1.5;">' . esc_html__('If the Terricel PWA is installed and your device supports opening site links in the app, the button may open there. Otherwise it opens the dispatch log in your default browser.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</p>'
+            . '</div></div></div></body></html>';
+    }
+
     private function render_dispatch_view_controls($view_mode, $selected_date) {
         $today = current_time('Y-m-d');
         echo '<form method="get" style="display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:14px 0;">';
