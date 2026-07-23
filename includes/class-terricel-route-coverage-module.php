@@ -1527,7 +1527,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $schedules = $this->get_schedules_for_date($selected_date);
         $availability = $this->get_availability_for_date($selected_date);
         $driver_out_records = $this->get_driver_out_records($selected_date);
-        $active_vacancies = $this->get_vacancies_for_date($selected_date);
+        $active_vacancies = $this->get_dispatcher_vacancies_for_date($selected_date);
         $route_rows = $this->build_dispatcher_route_rows($routes, $schedules, $driver_out_records, $active_vacancies, $selected_date);
         $scheduled_vacancies = $this->get_scheduled_driver_vacancies_for_date($selected_date);
 
@@ -1579,7 +1579,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $routes = $this->get_parent_routes();
         $schedules = $this->get_schedules_for_date($date);
         $driver_out_records = $this->get_driver_out_records($date);
-        $active_vacancies = $this->get_vacancies_for_date($date);
+        $active_vacancies = $this->get_dispatcher_vacancies_for_date($date);
         $route_rows = $this->build_dispatcher_route_rows($routes, $schedules, $driver_out_records, $active_vacancies, $date);
 
         return count($this->filter_route_rows_by_priority($route_rows, 'unassigned'));
@@ -1611,7 +1611,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $routes = $this->get_parent_routes();
         $schedules = $this->get_schedules_for_date($date);
         $driver_out_records = $this->get_driver_out_records($date);
-        $active_vacancies = $this->get_vacancies_for_date($date);
+        $active_vacancies = $this->get_dispatcher_vacancies_for_date($date);
         $route_rows = $this->build_dispatcher_route_rows($routes, $schedules, $driver_out_records, $active_vacancies, $date);
         $items = array();
         $vacant_count = 0;
@@ -1731,7 +1731,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             $schedules = $this->get_schedules_for_date($date);
             $availability = $this->get_availability_for_date($date);
             $driver_out_records = $this->get_driver_out_records($date);
-            $active_vacancies = $this->get_vacancies_for_date($date);
+            $active_vacancies = $this->get_dispatcher_vacancies_for_date($date);
             $route_rows = $this->build_dispatcher_route_rows($routes, $schedules, $driver_out_records, $active_vacancies, $date);
             $vacant_count = $this->count_unassigned_dispatch_runs($route_rows);
 
@@ -4467,6 +4467,9 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $runs = isset($route_schedule[$day_key]) && is_array($route_schedule[$day_key]) ? $route_schedule[$day_key] : array();
         $runs = $this->logistics()->apply_route_schedule_changes_to_runs($route_id, $date, $runs);
         $scheduled_run_values = array();
+        $vacancy_runs = $vacancy ? get_post_meta($vacancy->ID, '_terricel_vacancy_runs', true) : array();
+        $vacancy_runs = is_array($vacancy_runs) ? $vacancy_runs : array();
+        $date_vacancy_runs = array();
 
         foreach ($runs as $scheduled_run) {
             $scheduled_run_key = isset($scheduled_run['run_key']) ? sanitize_key($scheduled_run['run_key']) : '';
@@ -4477,12 +4480,19 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             }
         }
 
-        if (empty($scheduled_run_values)) {
+        if (!empty($vacancy_runs)) {
+            $date_vacancy_runs = array_filter(
+                $vacancy_runs,
+                function ($run) use ($date, $route_id) {
+                    return is_array($run) && $date === ($run['date'] ?? '') && absint($run['route_id'] ?? 0) === absint($route_id);
+                }
+            );
+        }
+
+        if (empty($scheduled_run_values) && empty($date_vacancy_runs)) {
             return array();
         }
 
-        $vacancy_runs = $vacancy ? get_post_meta($vacancy->ID, '_terricel_vacancy_runs', true) : array();
-        $vacancy_runs = is_array($vacancy_runs) ? $vacancy_runs : array();
         $run_substitutes = $schedule ? get_post_meta($schedule->ID, '_terricel_coverage_run_substitutes', true) : array();
         $run_substitutes = is_array($run_substitutes) ? $run_substitutes : array();
         $output = array();
@@ -4508,12 +4518,16 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             }
         }
 
-        if (!empty($vacancy_runs)) {
+        if (!empty($date_vacancy_runs)) {
             $runs = array_filter(
-                $vacancy_runs,
+                $date_vacancy_runs,
                 function ($run) use ($date, $route_id, $day_key, $scheduled_run_values) {
                     if (!is_array($run) || $date !== ($run['date'] ?? '') || absint($run['route_id'] ?? 0) !== absint($route_id)) {
                         return false;
+                    }
+
+                    if (empty($scheduled_run_values)) {
+                        return true;
                     }
 
                     $run_key = isset($run['run_key']) ? sanitize_key($run['run_key']) : '';
@@ -4824,6 +4838,20 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 ),
             )
         );
+    }
+
+    private function get_dispatcher_vacancies_for_date($date) {
+        $vacancies = array_merge(
+            $this->get_vacancies_for_date($date),
+            $this->get_scheduled_driver_vacancies_for_date($date)
+        );
+        $indexed = array();
+
+        foreach ($vacancies as $vacancy) {
+            $indexed[$vacancy->ID] = $vacancy;
+        }
+
+        return array_values($indexed);
     }
 
     private function get_vacancies_for_date($date) {

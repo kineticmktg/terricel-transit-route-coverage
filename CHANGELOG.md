@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.15] - 2026-07-22
+
+### Fixed
+
+- Show explicit multi-day vacancy runs in the dispatcher assignment table even when the route does not normally run on that weekday.
+
 ## [0.28.14] - 2026-07-22
 
 ### Added
