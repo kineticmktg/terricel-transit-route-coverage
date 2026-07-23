@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.8] - 2026-07-22
+
+### Fixed
+
+- Include route-management capability users in operations schedule-change notifications so dispatcher accounts are notified regardless of role slug.
+
 ## [0.28.7] - 2026-07-22
 
 ### Fixed

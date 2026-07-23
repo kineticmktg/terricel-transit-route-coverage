@@ -2433,23 +2433,42 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             return;
         }
 
-        $users = get_users(
-            array(
-                'fields'  => array('ID'),
-                'role__in' => array('terricel_admin', 'terricel_dispatcher', 'terricel_dispatch'),
-            )
-        );
-
-        foreach ($users as $user) {
+        foreach ($this->get_operations_notification_user_ids() as $user_id) {
             terricel_logistics_queue_user_notification(
                 $this->id,
-                $user->ID,
+                $user_id,
                 $subject,
                 $message,
                 admin_url('admin.php?page=terricel-transit-route-coverage'),
                 'operations_schedule_change'
             );
         }
+    }
+
+    private function get_operations_notification_user_ids() {
+        $user_ids = array();
+        $role_users = get_users(
+            array(
+                'fields'   => array('ID'),
+                'role__in' => array('administrator', 'terricel_admin', 'terricel_dispatcher', 'terricel_dispatch'),
+            )
+        );
+
+        foreach ($role_users as $user) {
+            $user_ids[] = absint($user->ID);
+        }
+
+        foreach (get_users(array('fields' => array('ID'))) as $user) {
+            if (user_can($user->ID, 'terricel_manage_routes')) {
+                $user_ids[] = absint($user->ID);
+            }
+        }
+
+        if (is_user_logged_in() && current_user_can('terricel_manage_routes')) {
+            $user_ids[] = get_current_user_id();
+        }
+
+        return array_values(array_filter(array_unique(array_map('absint', $user_ids))));
     }
 
     private function get_schedule_state_driver_ids($state) {
