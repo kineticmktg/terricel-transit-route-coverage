@@ -708,6 +708,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             'date'            => get_post_meta($post_id, '_terricel_coverage_date', true),
             'route_id'        => (int) get_post_meta($post_id, '_terricel_coverage_route_id', true),
             'driver_id'       => (int) get_post_meta($post_id, '_terricel_coverage_driver_id', true),
+            'substitute_driver_id' => (int) get_post_meta($post_id, '_terricel_coverage_substitute_driver_id', true),
             'run_substitutes' => get_post_meta($post_id, '_terricel_coverage_run_substitutes', true),
             'status'          => get_post_meta($post_id, '_terricel_coverage_status', true),
         );
@@ -739,6 +740,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 'date'            => $date,
                 'route_id'        => $route_id,
                 'driver_id'       => $driver_id,
+                'substitute_driver_id' => $substitute_driver_id,
                 'run_substitutes' => $run_substitutes,
                 'status'          => $status,
             ),
@@ -2193,6 +2195,16 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 )
             );
         }
+
+        $this->queue_operations_schedule_change_notification(
+            __('Route Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            sprintf(
+                __('%1$s changed for %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                $route_name,
+                $this->format_date($date),
+                $reason
+            )
+        );
     }
 
     private function queue_vacancy_affected_driver_notifications($old_state, $new_state, $notes = '') {
@@ -2253,6 +2265,16 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
             $this->queue_driver_notification($driver_id, $subject, $message);
         }
+
+        $this->queue_operations_schedule_change_notification(
+            __('Route Vacancy Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            sprintf(
+                __('%1$s changed for %2$s. Reason: %3$s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                $route_name,
+                $date_range,
+                $reason
+            )
+        );
     }
 
     private function queue_driver_notification($driver_id, $subject, $message) {
@@ -2264,6 +2286,30 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 $message,
                 admin_url('admin.php?page=terricel-driver-dashboard'),
                 'driver_schedule_change'
+            );
+        }
+    }
+
+    private function queue_operations_schedule_change_notification($subject, $message) {
+        if (!function_exists('terricel_logistics_queue_user_notification')) {
+            return;
+        }
+
+        $users = get_users(
+            array(
+                'fields'  => array('ID'),
+                'role__in' => array('terricel_admin', 'terricel_dispatcher'),
+            )
+        );
+
+        foreach ($users as $user) {
+            terricel_logistics_queue_user_notification(
+                $this->id,
+                $user->ID,
+                $subject,
+                $message,
+                admin_url('admin.php?page=terricel-transit-route-coverage'),
+                'operations_schedule_change'
             );
         }
     }

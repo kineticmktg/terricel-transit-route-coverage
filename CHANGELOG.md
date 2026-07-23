@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.5] - 2026-07-22
+
+### Added
+
+- Notify Terricel admins and dispatchers of all route schedule changes according to their profile notification settings.
+
 ## [0.28.1] - 2026-07-22
 
 ### Fixed
