@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.9] - 2026-07-22
+
+### Changed
+
+- Made route schedule-change notifications describe assigned/unassigned driver changes with route, run, and date details.
+- Grouped operations schedule-change notifications so bulk school/district changes notify the initial higher-level event instead of each affected route.
+
 ## [0.28.8] - 2026-07-22
 
 ### Fixed

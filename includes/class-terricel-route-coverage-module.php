@@ -2178,6 +2178,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $route_name = $route_id ? get_the_title($route_id) : __('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
         $reason = $this->get_schedule_notification_reason($notes);
         $driver_messages = $this->get_schedule_driver_change_messages($old_state, $new_state, $route_name, $date, $reason);
+        $operations_notice = $this->get_operations_schedule_notice($old_state, $new_state, $route_name, $date, $reason);
 
         foreach ($driver_messages as $driver_id => $messages) {
             $messages = array_unique(array_filter(array_map('sanitize_textarea_field', (array) $messages)));
@@ -2192,15 +2193,9 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         }
 
         $this->queue_operations_schedule_change_notification(
-            __('Route Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-            $this->append_schedule_change_reason(
-                sprintf(
-                    __('%1$s changed for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                    $route_name,
-                    $this->format_date($date)
-                ),
-                $reason
-            )
+            $operations_notice['subject'],
+            $operations_notice['message'],
+            $operations_notice['dedupe_key']
         );
     }
 
@@ -2288,8 +2283,8 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
     private function format_driver_schedule_assignment_message($action, $route_name, $run_label, $date_label, $reason = '') {
         $message = sprintf(
             'assigned' === $action
-                ? __('Your schedule has changed and you have been assigned to route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
-                : __('Your schedule has changed and you have been unassigned from route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                ? __('Driver was assigned to Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
+                : __('Driver was unassigned from Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
             $route_name,
             $run_label,
             $date_label
@@ -2411,7 +2406,8 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                     $date_range
                 ),
                 $reason
-            )
+            ),
+            $this->get_operations_dedupe_key('vacancy', $route_id, $date_range, $reason)
         );
     }
 
@@ -2428,10 +2424,17 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         }
     }
 
-    private function queue_operations_schedule_change_notification($subject, $message) {
+    private function queue_operations_schedule_change_notification($subject, $message, $dedupe_key = '') {
         if (!function_exists('terricel_logistics_queue_user_notification')) {
             return;
         }
+
+        $dedupe_key = $dedupe_key ? sanitize_key($dedupe_key) : $this->get_operations_dedupe_key($subject, $message);
+        if ($this->operations_notification_was_recently_queued($dedupe_key)) {
+            return;
+        }
+
+        $this->mark_operations_notification_queued($dedupe_key);
 
         foreach ($this->get_operations_notification_user_ids() as $user_id) {
             terricel_logistics_queue_user_notification(
@@ -2443,6 +2446,193 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 'operations_schedule_change'
             );
         }
+    }
+
+    private function get_operations_schedule_notice($old_state, $new_state, $route_name, $date, $reason = '') {
+        $route_id = !empty($new_state['route_id']) ? absint($new_state['route_id']) : (isset($old_state['route_id']) ? absint($old_state['route_id']) : 0);
+        $bulk_notice = $this->get_bulk_schedule_change_operations_notice($route_id, $date, $reason);
+        if (!empty($bulk_notice)) {
+            return $bulk_notice;
+        }
+
+        if ($this->is_bulk_schedule_change_reason($reason)) {
+            return array(
+                'subject'    => __('Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                'message'    => $this->append_schedule_change_reason(
+                    sprintf(
+                        __('Schedule change for %s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                        $this->format_date($date)
+                    ),
+                    $reason
+                ),
+                'dedupe_key' => $this->get_operations_dedupe_key('bulk-reason-schedule-change', $date, $reason),
+            );
+        }
+
+        $driver_change = $this->get_primary_operations_driver_change($old_state, $new_state);
+        if (!empty($driver_change)) {
+            $run_label = !empty($driver_change['run_label']) ? $driver_change['run_label'] : __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+            $message = $this->append_schedule_change_reason(
+                $this->format_operations_driver_schedule_assignment_message($driver_change['action'], $route_name, $run_label, $this->format_date($date)),
+                $reason
+            );
+
+            return array(
+                'subject'    => __('Route Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                'message'    => $message,
+                'dedupe_key' => $this->get_operations_dedupe_key('route-driver-change', $route_id, $date, $driver_change['action'], $run_label, $reason),
+            );
+        }
+
+        return array(
+            'subject'    => __('Route Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            'message'    => $this->append_schedule_change_reason(
+                sprintf(
+                    __('Route %1$s changed for %2$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $route_name,
+                    $this->format_date($date)
+                ),
+                $reason
+            ),
+            'dedupe_key' => $this->get_operations_dedupe_key('route-change', $route_id, $date, $reason),
+        );
+    }
+
+    private function get_bulk_schedule_change_operations_notice($route_id, $date, $reason = '') {
+        $route_id = absint($route_id);
+        if ($route_id < 1 || !$date || !method_exists($this->logistics(), 'get_route_schedule_changes_for_date')) {
+            return array();
+        }
+
+        $changes = $this->logistics()->get_route_schedule_changes_for_date($route_id, $date);
+        if (empty($changes) || !is_array($changes)) {
+            return array();
+        }
+
+        $location = $this->get_route_location_labels($route_id);
+        foreach ($changes as $change) {
+            if (!is_array($change)) {
+                continue;
+            }
+
+            $type = isset($change['type']) ? sanitize_key($change['type']) : '';
+            $note = isset($change['note']) ? $this->get_schedule_notification_reason($change['note']) : '';
+            if (!in_array($type, array('closure', 'delay', 'half_day'), true)) {
+                continue;
+            }
+
+            if ($reason && $note && 0 !== strcasecmp($reason, $note)) {
+                continue;
+            }
+
+            $label = $this->get_schedule_change_label($change);
+            $message = sprintf(
+                __('%1$s for %2$s / %3$s on %4$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                $label,
+                $location['districts'],
+                $location['schools'],
+                $this->format_date($date)
+            );
+            $message = $this->append_schedule_change_reason($message, $note ? $note : $reason);
+
+            return array(
+                'subject'    => __('School Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                'message'    => $message,
+                'dedupe_key' => $this->get_operations_dedupe_key('bulk-schedule-change', $date, $location['districts'], $location['schools'], $type, $label, $note ? $note : $reason),
+            );
+        }
+
+        return array();
+    }
+
+    private function is_bulk_schedule_change_reason($reason) {
+        $reason = strtolower($this->get_schedule_notification_reason($reason));
+        if (!$reason) {
+            return false;
+        }
+
+        foreach (array('snow', 'closure', 'closed', 'delay', 'early dismissal', 'half day', 'no school', 'district', 'school') as $keyword) {
+            if (false !== strpos($reason, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function get_primary_operations_driver_change($old_state, $new_state) {
+        foreach (array('driver_id', 'substitute_driver_id') as $field) {
+            $old_driver_id = isset($old_state[$field]) ? absint($old_state[$field]) : 0;
+            $new_driver_id = isset($new_state[$field]) ? absint($new_state[$field]) : 0;
+
+            if ($old_driver_id === $new_driver_id) {
+                continue;
+            }
+
+            if ($new_driver_id > 0) {
+                return array(
+                    'action'    => 'assigned',
+                    'run_label' => __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                );
+            }
+
+            if ($old_driver_id > 0) {
+                return array(
+                    'action'    => 'unassigned',
+                    'run_label' => __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                );
+            }
+        }
+
+        $old_run_substitutes = isset($old_state['run_substitutes']) && is_array($old_state['run_substitutes']) ? $old_state['run_substitutes'] : array();
+        $new_run_substitutes = isset($new_state['run_substitutes']) && is_array($new_state['run_substitutes']) ? $new_state['run_substitutes'] : array();
+        $run_values = array_unique(array_merge(array_keys($old_run_substitutes), array_keys($new_run_substitutes)));
+
+        foreach ($run_values as $run_value) {
+            $run_value = sanitize_text_field($run_value);
+            if (!$run_value) {
+                continue;
+            }
+
+            $old_driver_id = $this->get_effective_schedule_run_driver_id($old_state, $run_value);
+            $new_driver_id = $this->get_effective_schedule_run_driver_id($new_state, $run_value);
+            if ($old_driver_id === $new_driver_id) {
+                continue;
+            }
+
+            return array(
+                'action'    => $new_driver_id > 0 ? 'assigned' : 'unassigned',
+                'run_label' => $this->get_schedule_run_notification_label($run_value),
+            );
+        }
+
+        return array();
+    }
+
+    private function format_operations_driver_schedule_assignment_message($action, $route_name, $run_label, $date_label) {
+        return sprintf(
+            'assigned' === $action
+                ? __('Driver was assigned to Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
+                : __('Driver was unassigned from Route %1$s - %2$s - on %3$s.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+            $route_name,
+            $run_label,
+            $date_label
+        );
+    }
+
+    private function get_operations_dedupe_key() {
+        $parts = array_map('strval', func_get_args());
+        $parts = array_map('sanitize_text_field', $parts);
+
+        return 'terricel_ops_notice_' . md5(implode('|', $parts));
+    }
+
+    private function operations_notification_was_recently_queued($dedupe_key) {
+        return (bool) get_transient($dedupe_key);
+    }
+
+    private function mark_operations_notification_queued($dedupe_key) {
+        set_transient($dedupe_key, 1, 5 * MINUTE_IN_SECONDS);
     }
 
     private function get_operations_notification_user_ids() {
