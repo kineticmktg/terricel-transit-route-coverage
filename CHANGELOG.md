@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.17] - 2026-07-23
+
+### Changed
+
+- Show the route default driver name as text for covered route schedule runs, show the Run Default Driver dropdown only for runs the route default driver cannot cover, and update the availability warning text for the run-default workflow.
+
 ## [0.28.16] - 2026-07-23
 
 ### Added

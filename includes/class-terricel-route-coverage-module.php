@@ -571,6 +571,8 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $driver_availability = $this->get_driver_availability_map();
         $run_default_drivers = $this->logistics()->get_route_run_default_driver_assignments($post->ID);
         $driver_options = $this->get_all_active_driver_options();
+        $route_default_driver_id = (int) get_post_meta($post->ID, '_terricel_route_default_driver_id', true);
+        $route_default_driver_name = $route_default_driver_id > 0 ? $this->get_notification_driver_name($route_default_driver_id) : '';
 
         echo '<style>';
         echo '.terricel-route-run-edit{display:none;}';
@@ -585,7 +587,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo '.terricel-route-new-run-warning{display:none;color:#8a5a00;margin-top:8px;}';
         echo '</style>';
         echo '<p class="description">' . esc_html__('Define the normal runs for this route. Add one run to multiple weekdays by selecting the days below before saving.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</p>';
-        echo '<div id="terricel-route-availability-warning" class="terricel-route-availability-warning" style="display:none;">' . esc_html__('The selected driver is not available for the runs highlighted in orange. If this is in error, then update the driver availability, or multiple routes will need to be created in order to assign a driver to this highlighted route.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</div>';
+        echo '<div id="terricel-route-availability-warning" class="terricel-route-availability-warning" style="display:none;">' . esc_html__('The route default driver is not available for the runs highlighted in orange. Choose a Run Default Driver for each highlighted run, or update the route default driver availability if they should cover it.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</div>';
         echo '<table class="widefat striped" style="margin-top:10px;">';
         echo '<thead><tr>';
         echo '<th>' . esc_html__('Day of Week', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</th>';
@@ -609,8 +611,9 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 $end_time = isset($run['end_time']) && $run['end_time'] ? $run['end_time'] : $this->get_default_run_end_time($start_time);
                 $assignment_key = $this->logistics()->get_route_run_default_driver_key($day_key, $run_key, $start_time);
                 $run_default_driver_id = $assignment_key && isset($run_default_drivers[$assignment_key]) ? absint($run_default_drivers[$assignment_key]) : 0;
+                $default_driver_unavailable = $route_default_driver_id > 0 && !$this->driver_can_run($route_default_driver_id, $day_key, $run_key, $driver_availability);
 
-                echo '<tr class="terricel-route-run-row" data-day-key="' . esc_attr($day_key) . '" data-run-key="' . esc_attr($run_key) . '">';
+                echo '<tr class="terricel-route-run-row' . ($default_driver_unavailable ? ' is-driver-unavailable' : '') . '" data-day-key="' . esc_attr($day_key) . '" data-run-key="' . esc_attr($run_key) . '">';
                 echo '<td>' . esc_html($day_label) . '</td>';
                 echo '<td>';
                 echo '<span class="terricel-route-run-display">' . esc_html($run_name) . '</span>';
@@ -634,8 +637,12 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 echo '</span>';
                 echo '<input class="terricel-route-run-remove-input" type="hidden" name="terricel_route_regular_schedule[' . esc_attr($day_key) . '][' . esc_attr($index) . '][remove]" value="0">';
                 echo '</td>';
-                echo '<td>';
-                echo $this->get_run_default_driver_select_markup($assignment_key, $run_default_driver_id, $driver_options);
+                echo '<td class="terricel-route-run-default-driver-cell" data-assignment-key="' . esc_attr($assignment_key) . '" data-selected-driver-id="' . esc_attr($run_default_driver_id) . '" data-route-default-driver-name="' . esc_attr($route_default_driver_name) . '">';
+                if ($default_driver_unavailable) {
+                    echo $this->get_run_default_driver_select_markup($assignment_key, $run_default_driver_id, $driver_options);
+                } elseif ($route_default_driver_name) {
+                    echo esc_html($route_default_driver_name);
+                }
                 echo '</td>';
                 echo '</tr>';
             }
@@ -679,6 +686,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo 'var box=document.getElementById("terricel_route_regular_schedule");';
         echo 'if(!box){return;}';
         echo 'var availability=' . wp_json_encode($driver_availability) . ';';
+        echo 'var driverOptions=' . wp_json_encode($driver_options) . ';';
         echo 'var warning=document.getElementById("terricel-route-availability-warning");';
         echo 'var newRun=document.getElementById("terricel_route_new_run_key");';
         echo 'var newStart=document.getElementById("terricel_route_new_run_start_time");';
@@ -686,8 +694,13 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo 'var newRunWarning=document.getElementById("terricel-route-new-run-warning");';
         echo 'function addHour(value){if(!value){return "";}var parts=value.split(":");if(parts.length!==2){return "";}var h=(parseInt(parts[0],10)+1)%24;var m=parseInt(parts[1],10);if(isNaN(h)||isNaN(m)){return "";}return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0");}';
         echo 'function getDriverSelect(){return document.getElementById("terricel_route_default_driver_id");}';
+        echo 'function displayDriverName(name){name=String(name||"").trim();if(name.indexOf(",")!==-1){var parts=name.split(",");if(parts.length>=2&&parts[0].trim()&&parts[1].trim()){name=parts[1].trim()+" "+parts[0].trim();}}return name;}';
+        echo 'function getRouteDefaultDriverName(){var driverSelect=getDriverSelect();if(!driverSelect||!driverSelect.value||driverSelect.value==="0"){return "";}var option=driverSelect.options[driverSelect.selectedIndex];return displayDriverName(option?option.textContent:"");}';
         echo 'function driverCanRun(driverId,dayKey,runKey){if(!driverId||!dayKey||!runKey){return true;}var schedule=availability[String(driverId)]||{};var runs=schedule[dayKey]||[];return runs.indexOf(runKey)!==-1;}';
-        echo 'function syncRouteAvailabilityWarnings(){var driverSelect=getDriverSelect();var driverId=driverSelect?driverSelect.value:"0";var hasUnavailable=false;box.querySelectorAll(".terricel-route-run-row").forEach(function(row){if(row.classList.contains("is-removing")){row.classList.remove("is-driver-unavailable");return;}var runDefault=row.querySelector(".terricel-route-run-default-driver");if(runDefault&&runDefault.value&&runDefault.value!=="0"){row.classList.remove("is-driver-unavailable");return;}var input=row.querySelector(".terricel-route-run-key-input");var runKey=input?input.value:row.getAttribute("data-run-key");var dayKey=row.getAttribute("data-day-key");var unavailable=!driverCanRun(driverId,dayKey,runKey);row.classList.toggle("is-driver-unavailable",unavailable);if(unavailable){hasUnavailable=true;}});if(warning){warning.style.display=hasUnavailable?"block":"none";}syncNewRunAvailabilityWarning();}';
+        echo 'function escapeHtml(value){return String(value||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}';
+        echo 'function renderRunDefaultSelect(cell){if(!cell){return;}var key=cell.getAttribute("data-assignment-key")||"";if(!key){cell.innerHTML="";return;}var selected=cell.getAttribute("data-selected-driver-id")||"0";var html="<select class=\\"widefat terricel-route-run-default-driver\\" name=\\"terricel_route_run_default_drivers["+escapeHtml(key)+"]\\"><option value=\\"0\\">' . esc_js(__('Select run default driver', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)) . '</option>";Object.keys(driverOptions||{}).forEach(function(id){html+="<option value=\\""+escapeHtml(id)+"\\""+(String(selected)===String(id)?" selected":"")+">"+escapeHtml(driverOptions[id])+"</option>";});cell.innerHTML=html+"</select>";}';
+        echo 'function renderRouteDefaultName(cell){if(!cell){return;}var select=cell.querySelector(".terricel-route-run-default-driver");if(select){cell.setAttribute("data-selected-driver-id",select.value||"0");}var name=getRouteDefaultDriverName()||cell.getAttribute("data-route-default-driver-name")||"";cell.innerHTML=escapeHtml(name);}';
+        echo 'function syncRouteAvailabilityWarnings(){var driverSelect=getDriverSelect();var driverId=driverSelect?driverSelect.value:"0";var hasUnavailable=false;box.querySelectorAll(".terricel-route-run-row").forEach(function(row){var cell=row.querySelector(".terricel-route-run-default-driver-cell");if(row.classList.contains("is-removing")){row.classList.remove("is-driver-unavailable");renderRouteDefaultName(cell);return;}var input=row.querySelector(".terricel-route-run-key-input");var runKey=input?input.value:row.getAttribute("data-run-key");var dayKey=row.getAttribute("data-day-key");var unavailable=!driverCanRun(driverId,dayKey,runKey);row.classList.toggle("is-driver-unavailable",unavailable);if(unavailable){hasUnavailable=true;if(cell&&!cell.querySelector(".terricel-route-run-default-driver")){renderRunDefaultSelect(cell);}}else{renderRouteDefaultName(cell);}});if(warning){warning.style.display=hasUnavailable?"block":"none";}syncNewRunAvailabilityWarning();}';
         echo 'function syncNewRunAvailabilityWarning(){if(!newRun||!newRunWarning){return;}var driverSelect=getDriverSelect();var driverId=driverSelect?driverSelect.value:"0";var runKey=newRun.value;var unavailableDays=[];box.querySelectorAll(".terricel-route-new-run-day-input:checked").forEach(function(input){if(!driverCanRun(driverId,input.value,runKey)){unavailableDays.push(input.getAttribute("data-day-label")||input.value);}});if(unavailableDays.length){var template=newRunWarning.getAttribute("data-message-template")||"The selected driver is not available for this new run on: %s.";newRunWarning.textContent=template.replace("%s",unavailableDays.join(", "));newRunWarning.style.display="block";}else{newRunWarning.textContent="";newRunWarning.style.display="none";}}';
         echo 'box.addEventListener("click",function(event){';
         echo 'var edit=event.target.closest(".terricel-route-run-edit-link");';
@@ -3732,6 +3745,23 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         }
 
         return $availability_map;
+    }
+
+    private function driver_can_run($driver_id, $day_key, $run_key, $availability_map = array()) {
+        $driver_id = absint($driver_id);
+        $day_key = sanitize_key($day_key);
+        $run_key = sanitize_key($run_key);
+
+        if ($driver_id < 1 || !$day_key || !$run_key) {
+            return true;
+        }
+
+        $availability = is_array($availability_map) && isset($availability_map[$driver_id]) && is_array($availability_map[$driver_id])
+            ? $availability_map[$driver_id]
+            : $this->get_driver_regular_availability($driver_id);
+        $runs = isset($availability[$day_key]) && is_array($availability[$day_key]) ? $availability[$day_key] : array();
+
+        return in_array($run_key, $runs, true);
     }
 
     private function get_vacancy_regular_driver_id($vacancy_id) {
