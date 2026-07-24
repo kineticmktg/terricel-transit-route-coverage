@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.18] - 2026-07-23
+
+### Changed
+
+- Link route/run assignment notifications to the assigned row on My Dashboard so it can scroll into view and pulse.
+
 ## [0.28.17] - 2026-07-23
 
 ### Changed

@@ -2339,7 +2339,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                     $this->format_date($date),
                     $run_label
                 ),
-                admin_url('admin.php?page=terricel-driver-dashboard'),
+                $this->get_driver_dashboard_assignment_url($date, $route_id, $run_value),
                 'driver_schedule_change'
             );
         }
@@ -2357,18 +2357,42 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         $route_id = !empty($new_state['route_id']) ? absint($new_state['route_id']) : (isset($old_state['route_id']) ? absint($old_state['route_id']) : 0);
         $route_name = $route_id ? get_the_title($route_id) : __('Route', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
         $reason = $this->get_schedule_notification_reason($notes);
-        $driver_messages = $this->get_schedule_driver_change_messages($old_state, $new_state, $route_name, $date, $reason);
+        $driver_messages = $this->get_schedule_driver_change_messages($old_state, $new_state, $route_id, $route_name, $date, $reason);
         $operations_notice = $this->get_operations_schedule_notice($old_state, $new_state, $route_name, $date, $reason);
 
         foreach ($driver_messages as $driver_id => $messages) {
-            $messages = array_unique(array_filter(array_map('sanitize_textarea_field', (array) $messages)));
+            $notification_url = '';
+            $message_texts = array();
+
+            foreach ((array) $messages as $message_item) {
+                if (is_array($message_item)) {
+                    $message = isset($message_item['message']) ? sanitize_textarea_field($message_item['message']) : '';
+                    if (!$notification_url && !empty($message_item['url'])) {
+                        $notification_url = esc_url_raw($message_item['url']);
+                    }
+                } else {
+                    $message = sanitize_textarea_field($message_item);
+                }
+
+                if ($message) {
+                    $message_texts[] = $message;
+                }
+            }
+
+            $message_texts = array_values(array_unique(array_filter($message_texts)));
+            if (count($message_texts) !== 1) {
+                $notification_url = '';
+            }
+
+            $messages = $message_texts;
             if (empty($messages)) {
                 continue;
             }
             $this->queue_driver_notification(
                 $driver_id,
                 __('Driver Schedule Change', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
-                implode("\n", $messages)
+                implode("\n", $messages),
+                $notification_url
             );
         }
 
@@ -2379,7 +2403,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         );
     }
 
-    private function get_schedule_driver_change_messages($old_state, $new_state, $route_name, $date, $reason = '') {
+    private function get_schedule_driver_change_messages($old_state, $new_state, $route_id, $route_name, $date, $reason = '') {
         $messages = array();
         $date_label = $this->format_date($date);
         $route_run_label = __('All scheduled runs', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
@@ -2397,7 +2421,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             }
 
             if ($new_driver_id > 0) {
-                $messages[$new_driver_id][] = $this->format_driver_schedule_assignment_message('assigned', $route_name, $route_run_label, $date_label, $reason);
+                $messages[$new_driver_id][] = array(
+                    'message' => $this->format_driver_schedule_assignment_message('assigned', $route_name, $route_run_label, $date_label, $reason),
+                    'url'     => $this->get_driver_dashboard_assignment_url($date, $route_id),
+                );
             }
         }
 
@@ -2424,7 +2451,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             }
 
             if ($new_driver_id > 0) {
-                $messages[$new_driver_id][] = $this->format_driver_schedule_assignment_message('assigned', $route_name, $run_label, $date_label, $reason);
+                $messages[$new_driver_id][] = array(
+                    'message' => $this->format_driver_schedule_assignment_message('assigned', $route_name, $run_label, $date_label, $reason),
+                    'url'     => $this->get_driver_dashboard_assignment_url($date, $route_id, $run_value),
+                );
             }
         }
 
@@ -2591,17 +2621,35 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         );
     }
 
-    private function queue_driver_notification($driver_id, $subject, $message) {
+    private function queue_driver_notification($driver_id, $subject, $message, $url = '') {
+        $url = $url ? esc_url_raw($url) : admin_url('admin.php?page=terricel-driver-dashboard');
+
         foreach ($this->get_user_ids_for_driver($driver_id) as $user_id) {
             terricel_logistics_queue_user_notification(
                 $this->id,
                 $user_id,
                 $subject,
                 $message,
-                admin_url('admin.php?page=terricel-driver-dashboard'),
+                $url,
                 'driver_schedule_change'
             );
         }
+    }
+
+    private function get_driver_dashboard_assignment_url($date, $route_id = 0, $run_value = '') {
+        if (!function_exists('terricel_logistics_driver_dashboard_assignment_url')) {
+            return admin_url('admin.php?page=terricel-driver-dashboard');
+        }
+
+        $run_key = '';
+        $start_time = '';
+        $run_parts = $run_value ? $this->logistics()->parse_run_value($run_value) : null;
+        if ($run_parts) {
+            $run_key = isset($run_parts['run_key']) ? $run_parts['run_key'] : '';
+            $start_time = isset($run_parts['start_time']) ? $run_parts['start_time'] : '';
+        }
+
+        return terricel_logistics_driver_dashboard_assignment_url($date, $route_id, $run_key, $start_time);
     }
 
     private function queue_operations_schedule_change_notification($subject, $message, $dedupe_key = '') {
