@@ -1677,6 +1677,93 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         );
     }
 
+    public function get_trip_driver_route_conflicts($driver_id, $start_date, $start_time, $end_date, $end_time) {
+        $driver_id = absint($driver_id);
+        $start_date = $this->sanitize_date_value($start_date);
+        $start_time = $this->sanitize_time_value($start_time);
+        $end_date = $this->sanitize_date_value($end_date);
+        $end_time = $this->sanitize_time_value($end_time);
+
+        if ($driver_id < 1 || !$start_date || !$start_time || !$end_date || !$end_time) {
+            return array();
+        }
+
+        if ($end_date < $start_date) {
+            $end_date = $start_date;
+        }
+
+        $conflicts = array();
+        foreach ($this->logistics()->get_driver_default_route_ids($driver_id) as $route_id) {
+            $route_id = absint($route_id);
+            if ($route_id < 1) {
+                continue;
+            }
+
+            foreach ($this->get_trip_conflict_runs_for_route($route_id, $start_date, $start_time, $end_date, $end_time) as $run) {
+                $run['driver_id'] = $driver_id;
+                $run['route_id'] = $route_id;
+                $run['driver_name'] = get_the_title($driver_id);
+                $run['route_name'] = get_the_title($route_id);
+                $run['message'] = sprintf(
+                    __('%1$s conflicts with %2$s on %3$s, %4$s (%5$s-%6$s).', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                    $run['driver_name'],
+                    $run['route_name'],
+                    $this->format_date($run['date']),
+                    $run['run_name'],
+                    $run['start_time'],
+                    $run['end_time']
+                );
+                $conflicts[] = $run;
+            }
+        }
+
+        return $conflicts;
+    }
+
+    public function create_trip_route_vacancies($trip_id, $conflicts) {
+        $trip_id = absint($trip_id);
+        $created = array();
+
+        foreach ($this->group_trip_conflicts_for_vacancies($conflicts) as $group) {
+            $vacancy_id = $this->find_trip_route_vacancy($trip_id, $group['driver_id'], $group['route_id'], $group['date']);
+            if ($vacancy_id < 1) {
+                $vacancy_id = wp_insert_post(
+                    array(
+                        'post_type'   => self::VACANCY_POST_TYPE,
+                        'post_status' => 'publish',
+                        'post_title'  => $this->build_vacancy_title($group['date'], $group['driver_id']),
+                    ),
+                    true
+                );
+            }
+
+            if (is_wp_error($vacancy_id) || $vacancy_id < 1) {
+                continue;
+            }
+
+            $notes = sprintf(
+                __('Created from trip %1$s to make the regular route vacant while the driver is assigned to the trip.', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN),
+                $trip_id ? get_the_title($trip_id) : __('Unknown Trip', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN)
+            );
+
+            update_post_meta($vacancy_id, '_terricel_vacancy_date', $group['date']);
+            update_post_meta($vacancy_id, '_terricel_vacancy_end_date', $group['date']);
+            update_post_meta($vacancy_id, '_terricel_vacancy_driver_id', $group['driver_id']);
+            update_post_meta($vacancy_id, '_terricel_vacancy_route_id', $group['route_id']);
+            delete_post_meta($vacancy_id, '_terricel_vacancy_assigned_driver_id');
+            update_post_meta($vacancy_id, '_terricel_vacancy_status', 'open');
+            update_post_meta($vacancy_id, '_terricel_vacancy_priority', 'normal');
+            update_post_meta($vacancy_id, '_terricel_vacancy_runs', $group['runs']);
+            update_post_meta($vacancy_id, '_terricel_vacancy_notes', $notes);
+            update_post_meta($vacancy_id, '_terricel_vacancy_source_trip_id', $trip_id);
+            $this->update_generated_title($vacancy_id, $this->build_vacancy_title($group['date'], $group['driver_id']));
+            $this->sync_vacancy_alert($vacancy_id, $group['date'], $group['date'], $group['route_id'], 'open', 'normal', 0);
+            $created[] = $vacancy_id;
+        }
+
+        return array_values(array_unique(array_map('absint', $created)));
+    }
+
     private function get_daily_vacancy_summary($date) {
         $date = $date ? $this->sanitize_date_value($date) : current_time('Y-m-d');
         $routes = $this->get_parent_routes();
@@ -1712,6 +1799,116 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             'covered_count' => $covered_count,
             'dispatch_url'  => admin_url('admin.php?page=terricel-transit-route-coverage'),
         );
+    }
+
+    private function get_trip_conflict_runs_for_route($route_id, $start_date, $start_time, $end_date, $end_time) {
+        $conflicts = array();
+        $schedule = $this->get_route_regular_schedule($route_id);
+
+        for ($timestamp = strtotime($start_date); $timestamp && $timestamp <= strtotime($end_date); $timestamp += DAY_IN_SECONDS) {
+            $date = date('Y-m-d', $timestamp);
+            $day_key = strtolower(date('l', $timestamp));
+            $runs = isset($schedule[$day_key]) && is_array($schedule[$day_key]) ? $schedule[$day_key] : array();
+            $runs = $this->logistics()->apply_route_schedule_changes_to_runs($route_id, $date, $runs);
+
+            foreach ($runs as $run) {
+                if (!is_array($run)) {
+                    continue;
+                }
+
+                $run_key = isset($run['run_key']) ? sanitize_key($run['run_key']) : '';
+                $run_name = isset($run['run_name']) ? sanitize_text_field($run['run_name']) : $this->get_run_name_label($run_key);
+                $run_start = isset($run['start_time']) ? $this->sanitize_time_value($run['start_time']) : '';
+                $run_end = isset($run['end_time']) ? $this->sanitize_time_value($run['end_time']) : '';
+                $run_end = $run_end ? $run_end : $this->logistics()->get_default_run_end_time($run_start);
+
+                if (!$run_key || !$run_start || !$this->datetime_windows_overlap($start_date, $start_time, $end_date, $end_time, $date, $run_start, $date, $run_end)) {
+                    continue;
+                }
+
+                $conflicts[] = array(
+                    'date'       => $date,
+                    'day'        => $day_key,
+                    'run_key'    => $run_key,
+                    'run_name'   => $run_name ? $run_name : $run_key,
+                    'start_time' => $run_start,
+                    'end_time'   => $run_end,
+                );
+            }
+        }
+
+        return $conflicts;
+    }
+
+    private function datetime_windows_overlap($first_start_date, $first_start_time, $first_end_date, $first_end_time, $second_start_date, $second_start_time, $second_end_date, $second_end_time) {
+        $first_start = strtotime($first_start_date . ' ' . $first_start_time);
+        $first_end = strtotime($first_end_date . ' ' . $first_end_time);
+        $second_start = strtotime($second_start_date . ' ' . $second_start_time);
+        $second_end = strtotime($second_end_date . ' ' . $second_end_time);
+
+        return $first_start && $first_end && $second_start && $second_end && $first_start < $second_end && $second_start < $first_end;
+    }
+
+    private function group_trip_conflicts_for_vacancies($conflicts) {
+        $groups = array();
+        $conflicts = is_array($conflicts) ? $conflicts : array();
+
+        foreach ($conflicts as $conflict) {
+            if (!is_array($conflict)) {
+                continue;
+            }
+
+            $driver_id = absint($conflict['driver_id'] ?? 0);
+            $route_id = absint($conflict['route_id'] ?? 0);
+            $date = $this->sanitize_date_value($conflict['date'] ?? '');
+            $run_key = sanitize_key($conflict['run_key'] ?? '');
+            $start_time = $this->sanitize_time_value($conflict['start_time'] ?? '');
+
+            if ($driver_id < 1 || $route_id < 1 || !$date || !$run_key || !$start_time) {
+                continue;
+            }
+
+            $key = implode('|', array($driver_id, $route_id, $date));
+            if (!isset($groups[$key])) {
+                $groups[$key] = array(
+                    'driver_id' => $driver_id,
+                    'route_id'  => $route_id,
+                    'date'      => $date,
+                    'runs'      => array(),
+                );
+            }
+
+            $groups[$key]['runs'][] = array(
+                'date'       => $date,
+                'day'        => sanitize_key($conflict['day'] ?? strtolower(date('l', strtotime($date)))),
+                'route_id'   => $route_id,
+                'run_key'    => $run_key,
+                'run_name'   => sanitize_text_field($conflict['run_name'] ?? $this->get_run_name_label($run_key)),
+                'start_time' => $start_time,
+                'end_time'   => $this->sanitize_time_value($conflict['end_time'] ?? '') ?: $this->logistics()->get_default_run_end_time($start_time),
+            );
+        }
+
+        return $groups;
+    }
+
+    private function find_trip_route_vacancy($trip_id, $driver_id, $route_id, $date) {
+        $matches = get_posts(
+            array(
+                'post_type'      => self::VACANCY_POST_TYPE,
+                'post_status'    => array('publish', 'draft', 'pending', 'future', 'private'),
+                'posts_per_page' => 1,
+                'fields'         => 'ids',
+                'meta_query'     => array(
+                    array('key' => '_terricel_vacancy_source_trip_id', 'value' => absint($trip_id)),
+                    array('key' => '_terricel_vacancy_driver_id', 'value' => absint($driver_id)),
+                    array('key' => '_terricel_vacancy_route_id', 'value' => absint($route_id)),
+                    array('key' => '_terricel_vacancy_date', 'value' => $this->sanitize_date_value($date)),
+                ),
+            )
+        );
+
+        return empty($matches) ? 0 : absint($matches[0]);
     }
 
     private function format_daily_vacancy_summary_item($row, $run, $is_covered) {

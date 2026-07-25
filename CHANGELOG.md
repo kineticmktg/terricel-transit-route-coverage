@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.19] - 2026-07-25
+
+### Added
+
+- Added a public trip handoff API for driver route conflict checks and route vacancy creation.
+
 ## [0.28.18] - 2026-07-23
 
 ### Changed

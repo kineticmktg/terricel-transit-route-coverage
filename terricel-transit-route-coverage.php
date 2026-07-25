@@ -3,7 +3,7 @@
  * Plugin Name: Terricel Transit Dispatch
  * Plugin URI: https://kineticmktg.com
  * Description: Dispatch child module for Terricel Transit Operations.
- * Version: 0.28.18
+ * Version: 0.28.19
  * Author: Kinetic Marketing LLC
  * Author URI: https://kineticmktg.com
  * License: GPL v2 or later
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('TERRICEL_ROUTE_COVERAGE_VERSION', '0.28.18');
+define('TERRICEL_ROUTE_COVERAGE_VERSION', '0.28.19');
 define('TERRICEL_ROUTE_COVERAGE_FILE', __FILE__);
 define('TERRICEL_ROUTE_COVERAGE_PATH', plugin_dir_path(__FILE__));
 define('TERRICEL_ROUTE_COVERAGE_URL', plugin_dir_url(__FILE__));
@@ -46,7 +46,14 @@ function terricel_route_coverage_bootstrap() {
 }
 
 function terricel_route_coverage_register_module($registry) {
-    $registry->add(new Terricel_Route_Coverage_Module());
+    global $terricel_route_coverage_module;
+    $terricel_route_coverage_module = new Terricel_Route_Coverage_Module();
+    $registry->add($terricel_route_coverage_module);
+}
+
+function terricel_route_coverage() {
+    global $terricel_route_coverage_module;
+    return $terricel_route_coverage_module instanceof Terricel_Route_Coverage_Module ? $terricel_route_coverage_module : null;
 }
 
 function terricel_route_coverage_plugin_action_links($links) {
