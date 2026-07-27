@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.22] - 2026-07-27
+
+### Changed
+
+- Updated route coverage back buttons to label the actual previous admin page.
+- Added Manage Bus Routes and Manage Buses buttons to the Dispatch action row.
+
 ## [0.28.21] - 2026-07-27
 
 ### Changed

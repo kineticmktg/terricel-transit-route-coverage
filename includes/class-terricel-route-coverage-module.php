@@ -195,17 +195,14 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             return;
         }
 
-        $post_type_object = get_post_type_object($post->post_type);
-        $label = $post_type_object ? $post_type_object->labels->name : __('Records', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
         $fallback_url = admin_url('edit.php?post_type=' . $post->post_type);
 
         echo '<p style="margin:0 0 12px;">';
         if (function_exists('terricel_logistics_render_dynamic_admin_back_button')) {
-            terricel_logistics_render_dynamic_admin_back_button(
-                $fallback_url,
-                sprintf(__('< Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)
-            );
+            terricel_logistics_render_dynamic_admin_back_button($fallback_url);
         } else {
+            $post_type_object = get_post_type_object($post->post_type);
+            $label = $post_type_object ? $post_type_object->labels->name : __('Records', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
             echo '<a class="button" href="' . esc_url($fallback_url) . '">&larr; ' . esc_html(sprintf(__('Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)) . '</a>';
         }
         echo '</p>';
@@ -223,17 +220,14 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
             return;
         }
 
-        $post_type_object = get_post_type_object($post_type);
-        $label = $post_type_object ? $post_type_object->labels->name : __('Records', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
         $fallback_url = admin_url('admin.php?page=terricel-transit-route-coverage');
 
         echo '<div class="notice notice-info inline" style="padding:8px 12px;">';
         if (function_exists('terricel_logistics_render_dynamic_admin_back_button')) {
-            terricel_logistics_render_dynamic_admin_back_button(
-                $fallback_url,
-                sprintf(__('< Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)
-            );
+            terricel_logistics_render_dynamic_admin_back_button($fallback_url);
         } else {
+            $post_type_object = get_post_type_object($post_type);
+            $label = $post_type_object ? $post_type_object->labels->name : __('Records', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
             echo '<a class="button" href="' . esc_url($fallback_url) . '">&larr; ' . esc_html(sprintf(__('Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)) . '</a>';
         }
         echo '</div>';
@@ -2063,6 +2057,8 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . self::SCHEDULE_POST_TYPE)) . '">' . esc_html__('Manage Schedules', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
         echo '<a class="button" href="' . esc_url(admin_url('post-new.php?post_type=' . self::VACANCY_POST_TYPE)) . '">' . esc_html__('Add Route Vacancy', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
         echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . self::VACANCY_POST_TYPE)) . '">' . esc_html__('Manage Vacancies', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
+        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::ROUTE_POST_TYPE)) . '">' . esc_html__('Manage Bus Routes', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
+        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::BUS_POST_TYPE)) . '">' . esc_html__('Manage Buses', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
         echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::DISTRICT_POST_TYPE)) . '">' . esc_html__('Manage Districts', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
         echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::SCHOOL_POST_TYPE)) . '">' . esc_html__('Manage Schools', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
         echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::DRIVER_POST_TYPE)) . '">' . esc_html__('Manage Drivers', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a>';
