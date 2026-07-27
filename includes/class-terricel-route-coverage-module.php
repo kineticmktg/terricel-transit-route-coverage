@@ -2025,7 +2025,10 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         echo '<a class="button button-primary" href="' . esc_url(admin_url('post-new.php?post_type=' . self::SCHEDULE_POST_TYPE)) . '">' . esc_html__('Add Daily Schedule', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
         echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . self::SCHEDULE_POST_TYPE)) . '">' . esc_html__('Manage Schedules', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
         echo '<a class="button" href="' . esc_url(admin_url('post-new.php?post_type=' . self::VACANCY_POST_TYPE)) . '">' . esc_html__('Add Route Vacancy', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
-        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . self::VACANCY_POST_TYPE)) . '">' . esc_html__('Manage Vacancies', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a>';
+        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . self::VACANCY_POST_TYPE)) . '">' . esc_html__('Manage Vacancies', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
+        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::DISTRICT_POST_TYPE)) . '">' . esc_html__('Manage Districts', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
+        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::SCHOOL_POST_TYPE)) . '">' . esc_html__('Manage Schools', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a> ';
+        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . Terricel_Logistics_Shared_Data::DRIVER_POST_TYPE)) . '">' . esc_html__('Manage Drivers', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN) . '</a>';
         echo '</p>';
     }
 

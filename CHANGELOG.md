@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.20] - 2026-07-27
+
+### Changed
+
+- Added Manage Districts, Manage Schools, and Manage Drivers buttons to the Dispatch action row.
+
 ## [0.28.19] - 2026-07-25
 
 ### Added
