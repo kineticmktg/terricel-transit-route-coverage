@@ -47,6 +47,7 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         add_action('admin_head-post.php', array($this, 'hide_title_field_for_module_records'));
         add_action('admin_head-post-new.php', array($this, 'hide_title_field_for_module_records'));
         add_action('edit_form_top', array($this, 'render_back_to_list_button'));
+        add_action('admin_notices', array($this, 'render_back_to_list_page_button'));
         add_action('restrict_manage_posts', array($this, 'render_admin_filters'));
         add_action('pre_get_posts', array($this, 'filter_admin_list_tables'));
         add_filter('views_edit-' . self::SCHEDULE_POST_TYPE, array($this, 'filter_schedule_list_views'));
@@ -196,10 +197,46 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
 
         $post_type_object = get_post_type_object($post->post_type);
         $label = $post_type_object ? $post_type_object->labels->name : __('Records', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        $fallback_url = admin_url('edit.php?post_type=' . $post->post_type);
 
         echo '<p style="margin:0 0 12px;">';
-        echo '<a class="button" href="' . esc_url(admin_url('edit.php?post_type=' . $post->post_type)) . '">&larr; ' . esc_html(sprintf(__('Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)) . '</a>';
+        if (function_exists('terricel_logistics_render_dynamic_admin_back_button')) {
+            terricel_logistics_render_dynamic_admin_back_button(
+                $fallback_url,
+                sprintf(__('< Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)
+            );
+        } else {
+            echo '<a class="button" href="' . esc_url($fallback_url) . '">&larr; ' . esc_html(sprintf(__('Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)) . '</a>';
+        }
         echo '</p>';
+    }
+
+    public function render_back_to_list_page_button() {
+        global $pagenow;
+
+        if ('edit.php' !== $pagenow || empty($_GET['post_type'])) {
+            return;
+        }
+
+        $post_type = sanitize_key(wp_unslash($_GET['post_type']));
+        if (!in_array($post_type, array(self::SCHEDULE_POST_TYPE, self::VACANCY_POST_TYPE), true)) {
+            return;
+        }
+
+        $post_type_object = get_post_type_object($post_type);
+        $label = $post_type_object ? $post_type_object->labels->name : __('Records', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN);
+        $fallback_url = admin_url('admin.php?page=terricel-transit-route-coverage');
+
+        echo '<div class="notice notice-info inline" style="padding:8px 12px;">';
+        if (function_exists('terricel_logistics_render_dynamic_admin_back_button')) {
+            terricel_logistics_render_dynamic_admin_back_button(
+                $fallback_url,
+                sprintf(__('< Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)
+            );
+        } else {
+            echo '<a class="button" href="' . esc_url($fallback_url) . '">&larr; ' . esc_html(sprintf(__('Back to %s', TERRICEL_ROUTE_COVERAGE_TEXT_DOMAIN), $label)) . '</a>';
+        }
+        echo '</div>';
     }
 
     public function register_parent_settings_tab($tabs) {

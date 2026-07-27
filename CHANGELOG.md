@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.21] - 2026-07-27
+
+### Changed
+
+- Adopted the parent dynamic admin back button helper for schedule and vacancy edit/list pages.
+
 ## [0.28.20] - 2026-07-27
 
 ### Changed
