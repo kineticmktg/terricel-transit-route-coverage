@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.24] - 2026-07-29
+
+### Fixed
+
+- Sorted Add Any Driver and vacancy editor driver dropdown options alphabetically by the displayed driver name.
+
 ## [0.28.23] - 2026-07-29
 
 ### Changed

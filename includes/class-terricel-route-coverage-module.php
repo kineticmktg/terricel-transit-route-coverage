@@ -3884,6 +3884,12 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
                 'default_route_id' => (int) get_post_meta($driver->ID, '_terricel_driver_default_route_id', true),
             );
         }
+        uasort(
+            $drivers,
+            function($first, $second) {
+                return strnatcasecmp((string) $first['name'], (string) $second['name']);
+            }
+        );
 
         foreach ($this->get_parent_routes() as $route) {
             $routes[$route->ID] = array(
@@ -4629,6 +4635,8 @@ class Terricel_Route_Coverage_Module extends Terricel_Logistics_Module {
         if ($selected_driver_id > 0 && !isset($options[$selected_driver_id]) && 'publish' === get_post_status($selected_driver_id)) {
             $options[$selected_driver_id] = get_the_title($selected_driver_id);
         }
+
+        natcasesort($options);
 
         return $options;
     }
