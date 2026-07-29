@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are documented in this file.
 
+## [0.28.23] - 2026-07-29
+
+### Changed
+
+- Prevented trip-assigned drivers from being saved as substitute run drivers unless Add Any Driver is checked.
+- Added Add Any Driver to the Daily Route Schedule run editor so it matches Dispatch run assignment behavior.
+
 ## [0.28.22] - 2026-07-27
 
 ### Changed
