@@ -35,7 +35,7 @@ jobs:
 
       - name: Deploy plugin
         run: |
-          rsync -avz --delete \
+          rsync -avz --delete --delete-excluded \
             -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.SSH_PORT }}" \
             --exclude ".git" \
             --exclude ".github" \
